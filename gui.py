@@ -6,9 +6,9 @@ import os
 import sys
 from utils import logger, log
 from downloader import DownloadManager
+from version import VERSION
 
 APP_NAME = "UltraYouTube Downloader"
-VERSION = "2.0.0"
 
 class YouTubeDownloaderApp(ctk.CTk):
     def __init__(self):
