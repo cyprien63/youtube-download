@@ -54,126 +54,103 @@ class DownloadManager:
         if not has_ffmpeg and (mode == "Audio" and fmt != "m4a"):
             log("WARNING: FFmpeg missing. Converting to selected audio format might fail.")
 
-        # Custom Logger to capture Text output and Progress
         class YtDlpLogger:
             def __init__(self):
                 pass
             
-            def debug(self, msg):
-                # yt-dlp sends "debug" logs for download progress too (starting with [download])
-                # or just std info.
-                self._process_msg(msg)
-
-            def info(self, msg):
-                self._process_msg(msg)
-
-            def warning(self, msg):
-                log(f"[WARNING] {msg}")
-
-            def error(self, msg):
-                log(f"[ERROR] {msg}")
-
+            def debug(self, msg): self._process_msg(msg)
+            def info(self, msg): self._process_msg(msg)
+            def warning(self, msg): log(f"[WARNING] {msg}")
+            def error(self, msg): log(f"[ERROR] {msg}")
+            
             def _process_msg(self, msg):
-                # Always log to GUI (except super spammy stuff if needed, but user wants to see it)
-                # Filter out carriage returns to avoid mess in text box if possible, 
-                # but text widget usually handles \n. yt-dlp uses \r for progress bars.
-                # We'll clean it up slightly.
                 clean_msg = msg.strip()
                 if not clean_msg: return
-
-                # Log it (maybe filter "download" lines if they are too fast, but user asked for them)
-                # To prevent GUI freezing from 100s of lines per second, we might check if it's a progress line
                 if clean_msg.startswith('[download]'):
-                    # Parse Percentage
-                    # "[download]  54.9% of ~  54.70MiB at  427.92KiB/s ETA 01:03"
                     try:
                         import re
-                        # Search for percentage: 54.9%
                         match = re.search(r'(\d+(?:\.\d+)?)%', clean_msg)
                         if match:
-                            val = float(match.group(1)) / 100
-                            progress_callback(val)
-                    except:
-                        pass
-                    
-                    # Log to GUI (User explicitly asked to see these lines)
+                            progress_callback(float(match.group(1)) / 100)
+                    except: pass
                     log(clean_msg)
                 else:
                     log(clean_msg)
 
-        ydl_opts = {
-            # Use playlist title as folder if available. 
-            # Syntax: %(playlist_title&{} /|)s means "If playlist_title exists, print it followed by /, else print nothing"
-            'outtmpl': os.path.join(path, '%(playlist_title&{} /|)s%(title)s.%(ext)s'),
-            'noplaylist': False, # Allow processing playlists (was True before? If it was true, playlists were failing or acting as single vids)
+        # 1. Base Options
+        ydl_opts_base = {
+            'noplaylist': False,
             'logger': YtDlpLogger(),
-            # 'verbose': True, # Uncomment if needed for more info
+            # We don't set outtmpl here yet, we decide it based on metadata
         }
 
-        # --- PARSE QUALITY ---
-        # "1080p" -> 1080, "2160p (4K)" -> 2160, "320 kbps" -> 320
+        # 2. Extract Metadata to decide folder structure
+        log("Analyzing URL...")
+        with yt_dlp.YoutubeDL({'noplaylist': False, 'quiet': True, 'logger': YtDlpLogger()}) as ydl_meta:
+            try:
+                info_dict = ydl_meta.extract_info(url, download=False)
+            except Exception as e:
+                log(f"Metadata extraction failed: {e}")
+                # Fallback to standard download if extraction fails
+                info_dict = None
+
+        # 3. Determine Output Template
+        # Default: Root folder
+        final_outtmpl = os.path.join(path, '%(title)s.%(ext)s')
+        
+        if info_dict:
+            # Check if it's a playlist
+            if 'entries' in info_dict or info_dict.get('_type') == 'playlist':
+                 playlist_title = info_dict.get('title') or "Playlist_Unknown"
+                 # Sanitize folder name (simple replace)
+                 playlist_title = "".join([c for c in playlist_title if c.isalnum() or c in (' ', '-', '_')]).strip()
+                 if not playlist_title: playlist_title = "Playlist"
+                 
+                 log(f"Playlist detected: '{playlist_title}'. Creating subfolder.")
+                 final_outtmpl = os.path.join(path, playlist_title, '%(title)s.%(ext)s')
+            else:
+                 log("Single video detected. Downloading to root.")
+
+        ydl_opts_base['outtmpl'] = final_outtmpl
+
+        # 4. Add Format/Quality Options (Same as before)
         import re
         q_val = 0
         try:
-            q_clean = re.sub(r"[^0-9]", "", quality) # Remove non-digits
-            if q_clean:
-                q_val = int(q_clean)
-        except:
-            pass
+            q_clean = re.sub(r"[^0-9]", "", quality)
+            if q_clean: q_val = int(q_clean)
+        except: pass
 
         if mode == "Audio":
-            # Quality = Bitrate (kbps)
-            # 320, 256, 192, 128...
-            # Format = mp3, m4a, wav, opus...
-            
-            ydl_opts['format'] = 'bestaudio/best'
-            
+            ydl_opts_base['format'] = 'bestaudio/best'
             post_args = []
-            
-            # If we need conversion (mp3, wav, opus usually need it)
             if has_ffmpeg:
                 post_args.append({
                     'key': 'FFmpegExtractAudio',
-                    'preferredcodec': fmt,  # mp3, wav, opus, m4a
+                    'preferredcodec': fmt,
                     'preferredquality': str(q_val) if q_val > 0 else '192',
                 })
             else:
-                if fmt == "m4a":
-                     ydl_opts['format'] = 'bestaudio[ext=m4a]/bestaudio'
+                if fmt == "m4a": ydl_opts_base['format'] = 'bestaudio[ext=m4a]/bestaudio'
                 else:
                     log(f"FFmpeg missing: Cannot force {fmt} {q_val}k. Downloading best m4a.")
-                    ydl_opts['format'] = 'bestaudio[ext=m4a]/bestaudio'
+                    ydl_opts_base['format'] = 'bestaudio[ext=m4a]/bestaudio'
 
-            if post_args:
-                ydl_opts['postprocessors'] = post_args
+            if post_args: ydl_opts_base['postprocessors'] = post_args
 
-        else: # Vidéo
-            # Quality = Height (1080, 720...)
-            # Format = mp4, mkv, webm
-            
+        else: # Video
             if has_ffmpeg:
-                # Merge best video fitting height + best audio
-                # e.g., bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]
-                
-                # Note: yt-dlp syntax for merging to specific functionality
-                # often we just select best streams and let 'merge_output_format' do container
-                ydl_opts['merge_output_format'] = fmt
-                
-                if q_val > 0:
-                     ydl_opts['format'] = f'bestvideo[height<={q_val}]+bestaudio/best[height<={q_val}]'
-                else:
-                     ydl_opts['format'] = f'bestvideo+bestaudio/best'
+                ydl_opts_base['merge_output_format'] = fmt
+                if q_val > 0: ydl_opts_base['format'] = f'bestvideo[height<={q_val}]+bestaudio/best[height<={q_val}]'
+                else: ydl_opts_base['format'] = f'bestvideo+bestaudio/best'
             else:
-                # Fallback single file
                 log("FFmpeg missing: Cannot merge high quality streams.")
                 if q_val > 1080: log("4K requires FFmpeg normally.")
-                
-                if q_val > 0:
-                    ydl_opts['format'] = f'best[ext={fmt}][height<={q_val}]/best[height<={q_val}]'
-                else:
-                    ydl_opts['format'] = f'best[ext={fmt}]/best'
+                if q_val > 0: ydl_opts_base['format'] = f'best[ext={fmt}][height<={q_val}]/best[height<={q_val}]'
+                else: ydl_opts_base['format'] = f'best[ext={fmt}]/best'
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        # 5. Run Download
+        with yt_dlp.YoutubeDL(ydl_opts_base) as ydl:
             ydl.download([url])
 
     def _download_pytube(self, url, path, mode, quality, fmt, progress_callback):
