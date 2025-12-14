@@ -28,16 +28,68 @@ def is_newer(remote_ver, local_ver):
     except:
         return False
 
+def install_git():
+    """Attempts to install Git via Winget, then Direct Download."""
+    print("⚠️ Git non trouvé. Tentative d'installation automatique...")
+    
+    # 1. Try Winget
+    print("   [1/2] Essai avec Winget...")
+    try:
+        subprocess.check_call(["winget", "install", "--id", "Git.Git", "-e", "--source", "winget", "--accept-source-agreements", "--accept-package-agreements"], shell=True)
+        print("✅ Git installé avec succès via Winget.")
+        return True
+    except Exception as e:
+        print(f"   ❌ Winget a précisé : {e}")
+
+    # 2. Try Direct Download
+    print("   [2/2] Essai par téléchargement direct...")
+    try:
+        import urllib.request
+        import tempfile
+        
+        # Latest Git for Windows URL (Standard 64-bit)
+        url = "https://github.com/git-for-windows/git/releases/download/v2.43.0.windows.1/Git-2.43.0-64-bit.exe"
+        installer_path = os.path.join(tempfile.gettempdir(), "git_installer.exe")
+        
+        print(f"   ⬇️ Téléchargement depuis GitHub...")
+        urllib.request.urlretrieve(url, installer_path)
+        
+        print("   📦 Installation silencieuse en cours...")
+        # /VERYSILENT /NORESTART /NOCANCEL /SP- /CLOSEAPPLICATIONS
+        subprocess.check_call([installer_path, "/VERYSILENT", "/NORESTART", "/NOCANCEL", "/SP-", "/CLOSEAPPLICATIONS"])
+        
+        try:
+            os.remove(installer_path)
+        except: pass
+        
+        print("✅ Git installé avec succès.")
+        return True
+    except Exception as e:
+        print(f"   ❌ L'installation directe a échoué: {e}")
+    
+    return False
+
 def update_application():
     """Checks remote version and updates ONLY if superior."""
     if getattr(sys, "frozen", False):
         return
 
-    print("🔍 Vérification SÉCURISÉE des mises à jour (GitHub)...")
+    print("🔍 Vérification des mises à jour (GitHub)...")
+    
+    # 0. Check Git Existence
+    git_exists = False
     try:
-        # Verify git existence
         subprocess.check_call(["git", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
+        git_exists = True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        # Try to install
+        if install_git():
+            git_exists = True
+        else:
+            print("⚠️ Git introuvable et impossible à installer. Mises à jour désactivées.")
+            return
+
+    try:        
         # 1. Get Local Version
         try:
             from version import VERSION as local_version
@@ -64,8 +116,6 @@ def update_application():
         else:
              print("🛡️  Sécurité : Version distante INFÉRIEURE. Mise à jour bloquée.")
             
-    except FileNotFoundError:
-        print("⚠️ Git non trouvé.")
     except Exception as e:
         print(f"⚠️ Erreur update : {e}")
 
