@@ -102,8 +102,10 @@ class DownloadManager:
                     log(clean_msg)
 
         ydl_opts = {
-            'outtmpl': os.path.join(path, '%(title)s.%(ext)s'),
-            'noplaylist': True,
+            # Use playlist title as folder if available. 
+            # Syntax: %(playlist_title&{} /|)s means "If playlist_title exists, print it followed by /, else print nothing"
+            'outtmpl': os.path.join(path, '%(playlist_title&{} /|)s%(title)s.%(ext)s'),
+            'noplaylist': False, # Allow processing playlists (was True before? If it was true, playlists were failing or acting as single vids)
             'logger': YtDlpLogger(),
             # 'verbose': True, # Uncomment if needed for more info
         }
