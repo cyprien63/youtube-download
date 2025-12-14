@@ -53,23 +53,59 @@ class DownloadManager:
         
         if not has_ffmpeg and (mode == "Audio" and fmt != "m4a"):
             log("WARNING: FFmpeg missing. Converting to selected audio format might fail.")
+
+        # Custom Logger to capture Text output and Progress
+        class YtDlpLogger:
+            def __init__(self):
+                pass
             
-        def hook(d):
-            if d['status'] == 'downloading':
-                try:
-                    p = d.get('_percent_str', '0%').replace('%','')
-                    val = float(p) / 100
-                    progress_callback(val)
-                except:
-                    pass
-            elif d['status'] == 'finished':
-                progress_callback(0.99)
-                log("yt-dlp: Processing...")
+            def debug(self, msg):
+                # yt-dlp sends "debug" logs for download progress too (starting with [download])
+                # or just std info.
+                self._process_msg(msg)
+
+            def info(self, msg):
+                self._process_msg(msg)
+
+            def warning(self, msg):
+                log(f"[WARNING] {msg}")
+
+            def error(self, msg):
+                log(f"[ERROR] {msg}")
+
+            def _process_msg(self, msg):
+                # Always log to GUI (except super spammy stuff if needed, but user wants to see it)
+                # Filter out carriage returns to avoid mess in text box if possible, 
+                # but text widget usually handles \n. yt-dlp uses \r for progress bars.
+                # We'll clean it up slightly.
+                clean_msg = msg.strip()
+                if not clean_msg: return
+
+                # Log it (maybe filter "download" lines if they are too fast, but user asked for them)
+                # To prevent GUI freezing from 100s of lines per second, we might check if it's a progress line
+                if clean_msg.startswith('[download]'):
+                    # Parse Percentage
+                    # "[download]  54.9% of ~  54.70MiB at  427.92KiB/s ETA 01:03"
+                    try:
+                        import re
+                        # Search for percentage: 54.9%
+                        match = re.search(r'(\d+(?:\.\d+)?)%', clean_msg)
+                        if match:
+                            val = float(match.group(1)) / 100
+                            progress_callback(val)
+                    except:
+                        pass
+                    
+                    # Log to GUI (User explicitly asked to see these lines)
+                    log(clean_msg)
+                else:
+                    log(clean_msg)
 
         ydl_opts = {
             'outtmpl': os.path.join(path, '%(title)s.%(ext)s'),
-            'progress_hooks': [hook],
             'noplaylist': True,
+            'logger': YtDlpLogger(),
+            # 'verbose': True, # Uncomment if needed for more info
         }
 
         # --- PARSE QUALITY ---

@@ -14,18 +14,39 @@ ECHO [Launcher] Python n'est pas detecte.
 ECHO [Launcher] Tentative d'installation automatique...
 
 winget --version >nul 2>&1
-IF ERRORLEVEL 1 GOTO WINGET_ERROR
+IF ERRORLEVEL 1 GOTO DIRECT_INSTALL
 
-ECHO [Launcher] Telechargement et installation de Python 3.12...
+ECHO [Launcher] Telechargement et installation de Python 3.12 (via Winget)...
 winget install -e --id Python.Python.3.12 --scope user --accept-source-agreements --accept-package-agreements
+IF ERRORLEVEL 1 GOTO DIRECT_INSTALL
 
+GOTO POST_INSTALL
+
+:DIRECT_INSTALL
+ECHO [Launcher] Winget indisponible ou echec. Utilisation de methode directe...
+ECHO [Launcher] Telechargement de Python 3.12...
+
+set "INSTALLER_URL=https://www.python.org/ftp/python/3.12.0/python-3.12.0-amd64.exe"
+set "INSTALLER_FILE=%TEMP%\python_installer.exe"
+
+powershell -Command "Invoke-WebRequest -Uri '%INSTALLER_URL%' -OutFile '%INSTALLER_FILE%'"
+IF ERRORLEVEL 1 GOTO INSTALL_ERROR
+
+ECHO [Launcher] Installation en cours (cela peut prendre une minute)...
+REM InstallAllUsers=0 (Current User), PrependPath=1 (Add to PATH), Include_test=0 (No tests)
+"%INSTALLER_FILE%" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0
+
+REM Cleanup
+del "%INSTALLER_FILE%"
+
+:POST_INSTALL
 ECHO.
 ECHO [INFO] Installation terminee.
 TIMEOUT /T 3 >nul
 GOTO DETECT_PYTHON
 
-:WINGET_ERROR
-ECHO [ERREUR] Winget est introuvable.
+:INSTALL_ERROR
+ECHO [ERREUR] Impossible d'installer Python automatiquement.
 ECHO [ACTION] Installez Python manuellement : https://www.python.org/downloads/
 PAUSE
 EXIT /B
