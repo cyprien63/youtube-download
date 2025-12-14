@@ -3,7 +3,6 @@ import shutil
 import yt_dlp
 from utils import log
 
-# Switch to pytubefix for better reliability
 try:
     from pytubefix import YouTube
     import pytubefix.exceptions
@@ -14,13 +13,13 @@ class DownloadManager:
     def __init__(self):
         pass
 
-    def start_download(self, url, path, mode, quality, progress_callback):
-        log(f"Starting download process for: {url}")
+    def start_download(self, url, path, mode, quality, fmt, progress_callback):
+        log(f"Process: {mode} | {quality} | {fmt}")
+        log(f"Target: {url}")
         
         if not os.path.exists(path):
             try:
                 os.makedirs(path)
-                log(f"Created directory: {path}")
             except OSError as e:
                 log(f"Error creating directory: {e}")
                 return False
@@ -29,34 +28,32 @@ class DownloadManager:
         
         # 1. Try yt-dlp
         try:
-            log("Attempting Primary Engine (yt-dlp)...")
-            self._download_ytdlp(url, path, mode, quality, progress_callback)
+            log("Engine: yt-dlp (Primary)...")
+            self._download_ytdlp(url, path, mode, quality, fmt, progress_callback)
             success = True
         except Exception as e:
-            log(f"[yt-dlp] Failed: {e}")
-            log("Switching to Secondary Engine (pytubefix)...")
+            log(f"[yt-dlp] Error: {e}")
+            log("Engine: pytubefix (Fallback)...")
 
-        # 2. Try pytubefix if yt-dlp failed
+        # 2. Try pytubefix
         if not success:
             if YouTube:
                 try:
-                    self._download_pytube(url, path, mode, quality, progress_callback)
+                    self._download_pytube(url, path, mode, quality, fmt, progress_callback)
                     success = True
                 except Exception as e:
-                    log(f"[pytubefix] Failed: {e}")
+                    log(f"[pytubefix] Error: {e}")
             else:
-                log("[pytubefix] Library not installed or unavailable.")
+                log("[pytubefix] Not available.")
 
         return success
 
-    def _download_ytdlp(self, url, path, mode, quality, progress_callback):
-        # Check for FFmpeg
+    def _download_ytdlp(self, url, path, mode, quality, fmt, progress_callback):
         has_ffmpeg = shutil.which('ffmpeg') is not None
-        if not has_ffmpeg:
-            log("WARNING: FFmpeg not found on system.")
-            log(" >> High Quality (1080p+) and MP3 conversion require FFmpeg.")
-            log(" >> Falling back to compatible mode (Max 720p / m4a).")
-
+        
+        if not has_ffmpeg and (mode == "Audio" and fmt != "m4a"):
+            log("WARNING: FFmpeg missing. Converting to selected audio format might fail.")
+            
         def hook(d):
             if d['status'] == 'downloading':
                 try:
@@ -66,8 +63,8 @@ class DownloadManager:
                 except:
                     pass
             elif d['status'] == 'finished':
-                log("yt-dlp: Download complete. Processing...")
                 progress_callback(0.99)
+                log("yt-dlp: Processing...")
 
         ydl_opts = {
             'outtmpl': os.path.join(path, '%(title)s.%(ext)s'),
@@ -75,39 +72,74 @@ class DownloadManager:
             'noplaylist': True,
         }
 
+        # --- PARSE QUALITY ---
+        # "1080p" -> 1080, "2160p (4K)" -> 2160, "320 kbps" -> 320
+        import re
+        q_val = 0
+        try:
+            q_clean = re.sub(r"[^0-9]", "", quality) # Remove non-digits
+            if q_clean:
+                q_val = int(q_clean)
+        except:
+            pass
+
         if mode == "Audio":
+            # Quality = Bitrate (kbps)
+            # 320, 256, 192, 128...
+            # Format = mp3, m4a, wav, opus...
+            
+            ydl_opts['format'] = 'bestaudio/best'
+            
+            post_args = []
+            
+            # If we need conversion (mp3, wav, opus usually need it)
             if has_ffmpeg:
-                # Optimal: Convert to MP3
-                ydl_opts['format'] = 'bestaudio/best'
-                ydl_opts['postprocessors'] = [{
+                post_args.append({
                     'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }]
+                    'preferredcodec': fmt,  # mp3, wav, opus, m4a
+                    'preferredquality': str(q_val) if q_val > 0 else '192',
+                })
             else:
-                # Fallback: Download m4a directly (no conversion needed)
-                ydl_opts['format'] = 'bestaudio[ext=m4a]/bestaudio'
-        else:
-            # Video
+                if fmt == "m4a":
+                     ydl_opts['format'] = 'bestaudio[ext=m4a]/bestaudio'
+                else:
+                    log(f"FFmpeg missing: Cannot force {fmt} {q_val}k. Downloading best m4a.")
+                    ydl_opts['format'] = 'bestaudio[ext=m4a]/bestaudio'
+
+            if post_args:
+                ydl_opts['postprocessors'] = post_args
+
+        else: # Vidéo
+            # Quality = Height (1080, 720...)
+            # Format = mp4, mkv, webm
+            
             if has_ffmpeg:
-                # Optimal: Merge Video + Audio
-                if quality == "Best":
-                    ydl_opts['format'] = 'bestvideo+bestaudio/best'
-                elif quality == "High":
-                    ydl_opts['format'] = 'bestvideo[height<=1080]+bestaudio/best'
-                elif quality == "Medium":
-                    ydl_opts['format'] = 'bestvideo[height<=720]+bestaudio/best'
-                elif quality == "Low":
-                    ydl_opts['format'] = 'worstvideo+bestaudio/worst'
+                # Merge best video fitting height + best audio
+                # e.g., bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]
+                
+                # Note: yt-dlp syntax for merging to specific functionality
+                # often we just select best streams and let 'merge_output_format' do container
+                ydl_opts['merge_output_format'] = fmt
+                
+                if q_val > 0:
+                     ydl_opts['format'] = f'bestvideo[height<={q_val}]+bestaudio/best[height<={q_val}]'
+                else:
+                     ydl_opts['format'] = f'bestvideo+bestaudio/best'
             else:
-                # Fallback: Single file (usually max 720p)
-                log("Using single-file format due to missing FFmpeg.")
-                ydl_opts['format'] = 'best[ext=mp4]/best'
+                # Fallback single file
+                log("FFmpeg missing: Cannot merge high quality streams.")
+                if q_val > 1080: log("4K requires FFmpeg normally.")
+                
+                if q_val > 0:
+                    ydl_opts['format'] = f'best[ext={fmt}][height<={q_val}]/best[height<={q_val}]'
+                else:
+                    ydl_opts['format'] = f'best[ext={fmt}]/best'
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-    def _download_pytube(self, url, path, mode, quality, progress_callback):
+    def _download_pytube(self, url, path, mode, quality, fmt, progress_callback):
+        # Pytube is less flexible, we do best effort mapping
         def pytube_progress(stream, chunk, bytes_remaining):
             total_size = stream.filesize
             bytes_downloaded = total_size - bytes_remaining
@@ -116,20 +148,51 @@ class DownloadManager:
 
         yt = YouTube(url, on_progress_callback=pytube_progress)
         
+        # Parse Quality INT
+        import re
+        q_val = 0
+        try:
+            q_clean = re.sub(r"[^0-9]", "", quality)
+            if q_clean: q_val = int(q_clean)
+        except: pass
+
         if mode == "Audio":
-            stream = yt.streams.get_audio_only()
-            log(f"pytubefix: Downloading Audio ({stream.abr})")
-        else:
-            streams = yt.streams.filter(progressive=True, file_extension='mp4')
-            if quality in ["Best", "High"]:
-                stream = streams.get_highest_resolution()
-            elif quality == "Low":
-                stream = streams.get_lowest_resolution()
+            # Pytube basically just has "get_audio_only". Bitrate selection is limited.
+            # We filter by likely abr if possible, else take best.
+            log(f"pytubefix: Downloading Audio (target ~{q_val}k)")
+            streams = yt.streams.filter(only_audio=True)
+            # Try to find match
+            stream = streams.filter(abr=f"{q_val}kbps").first()
+            if not stream:
+                stream = streams.order_by('abr').desc().first()
+            
+            # Note: Pytube usually downloads mp4 audio or webm audio. Converting to mp3/wav requires ffmpeg manually.
+            # We will just download what it gives (usually m4a/webm) and rename if simple, but real conversion needs tools.
+            log(f"Selected: {stream.abr} {stream.mime_type}")
+            
+        else: # Video
+            log(f"pytubefix: Downloading Video (target <={q_val}p, {fmt})")
+            # Progressive (single file) usually maxes at 720p
+            # Adaptive requires merging (ffmpeg). Pytube doesn't merge auto.
+            # So we stick to progressive if likely, or adaptive if we accept separate files (but user wants 1 file).
+            # We will force progressive for stability in "Fallback" mode.
+            
+            streams = yt.streams.filter(progressive=True, file_extension='mp4') # Pytube mostly does mp4 progressive
+            
+            if q_val >= 1080:
+                # Progressive rarely has 1080p.
+                stream = streams.get_highest_resolution() 
+                log("Note: Pytube progressive limited to 720p usually.")
+            elif q_val > 0:
+                 stream = streams.filter(res=f"{q_val}p").first()
+                 if not stream: stream = streams.get_by_resolution(f"{q_val}p")
+                 if not stream: stream = streams.order_by('resolution').desc().first()
             else:
-                stream = streams.first()
-            log(f"pytubefix: Downloading Video ({stream.resolution})")
+                 stream = streams.get_highest_resolution()
 
         if stream:
-            stream.download(output_path=path)
+            out_file = stream.download(output_path=path)
+            # Basic rename for audio if it came as mp4 but user wanted mp3 (fake rename, not conversion)
+            # But dangerous without conversion. We leave it as is for safety in fallback mode.
         else:
             raise Exception("No suitable stream found.")

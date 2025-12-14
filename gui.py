@@ -23,8 +23,9 @@ class YouTubeDownloaderApp(ctk.CTk):
         # State
         self.download_path = tk.StringVar(value=os.path.join(os.getcwd(), "Downloads_YT"))
         self.url_var = tk.StringVar()
-        self.format_mode = tk.StringVar(value="Video")
-        self.quality_var = tk.StringVar(value="Best")
+        self.format_mode = tk.StringVar(value="Vidéo") # Default mode
+        self.format_var = tk.StringVar(value="mp4") # NEW
+        self.quality_var = tk.StringVar(value="1080p")
         
         self.manager = DownloadManager()
 
@@ -48,14 +49,44 @@ class YouTubeDownloaderApp(ctk.CTk):
         
         ctk.CTkLabel(self.sidebar, text=APP_NAME, font=ctk.CTkFont(size=20, weight="bold")).grid(row=0, column=0, padx=20, pady=(20,10))
         
-        ctk.CTkLabel(self.sidebar, text="Mode:", anchor="w").grid(row=1, column=0, padx=20, pady=(10,0))
-        ctk.CTkSegmentedButton(self.sidebar, values=["Video", "Audio"], variable=self.format_mode).grid(row=2, column=0, padx=20, pady=(10,10))
-        
-        ctk.CTkLabel(self.sidebar, text="Quality:", anchor="w").grid(row=3, column=0, padx=20, pady=(10,0))
-        ctk.CTkComboBox(self.sidebar, values=["Best", "High", "Medium", "Low"], variable=self.quality_var).grid(row=4, column=0, padx=20, pady=(0,20))
+        # MODE SELECTION
+        ctk.CTkLabel(self.sidebar, text="Type de contenu :", anchor="w").grid(row=1, column=0, padx=20, pady=(10,0))
+        self.mode_option = ctk.CTkSegmentedButton(self.sidebar, values=["Vidéo", "Audio"], command=self.update_options)
+        self.mode_option.grid(row=2, column=0, padx=20, pady=(5,10))
+        self.mode_option.set("Vidéo")
 
-        # Main
+        # FORMAT SELECTION
+        ctk.CTkLabel(self.sidebar, text="Format :", anchor="w").grid(row=3, column=0, padx=20, pady=(10,0))
+        self.format_menu = ctk.CTkComboBox(self.sidebar, variable=self.format_var)
+        self.format_menu.grid(row=4, column=0, padx=20, pady=(0,10))
+
+        # QUALITY SELECTION
+        ctk.CTkLabel(self.sidebar, text="Qualité :", anchor="w").grid(row=5, column=0, padx=20, pady=(10,0))
+        self.quality_menu = ctk.CTkComboBox(self.sidebar, variable=self.quality_var)
+        self.quality_menu.grid(row=6, column=0, padx=20, pady=(0,20))
+
+        # Initial population of menus
+        self.update_options("Vidéo")
+
+        # Main Area
         self.main = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        self.main.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+        self.main.grid_columnconfigure(0, weight=1)
+
+    def update_options(self, value):
+        if value == "Vidéo":
+            formats = ["mp4", "mkv", "webm"]
+            qualities = ["2160p (4K)", "1440p", "1080p", "720p", "480p", "360p", "240p", "144p"]
+            self.format_var.set("mp4")
+            self.quality_var.set("1080p")
+        else: # Audio
+            formats = ["mp3", "m4a", "opus", "wav"]
+            qualities = ["320 kbps", "256 kbps", "192 kbps", "128 kbps", "96 kbps", "64 kbps"]
+            self.format_var.set("mp3")
+            self.quality_var.set("192 kbps")
+        
+        self.format_menu.configure(values=formats)
+        self.quality_menu.configure(values=qualities)
         self.main.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
         self.main.grid_columnconfigure(0, weight=1)
 
@@ -107,14 +138,15 @@ class YouTubeDownloaderApp(ctk.CTk):
 
     def run_process(self, url):
         path = self.download_path.get()
-        mode = self.format_mode.get()
+        mode = self.mode_option.get() # Uses SegmentedButton directly
         qual = self.quality_var.get()
+        fmt = self.format_var.get()
         
         def update_prog(val):
             self.progress.set(val)
             self.pct_label.configure(text=f"{int(val*100)}%")
         
-        res = self.manager.start_download(url, path, mode, qual, update_prog)
+        res = self.manager.start_download(url, path, mode, qual, fmt, update_prog)
         
         if res:
             log("Finished successfully!")
