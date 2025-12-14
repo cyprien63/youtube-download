@@ -77,41 +77,28 @@ class DownloadManager:
                 else:
                     log(clean_msg)
 
-        # 1. Base Options
+        # 1. Base Options & Performance Optimization
         ydl_opts_base = {
             'noplaylist': False,
             'logger': YtDlpLogger(),
-            # We don't set outtmpl here yet, we decide it based on metadata
+            # Path handling: force usage of provided path as base
+            'paths': {'home': path},
+            # Template: If playlist_title exists, create subfolder, else root.
+            # Syntax: %(field&{}/|)s -> if field exists, insert "{field}/", else nothing.
+            'outtmpl': '%(playlist_title&{}/|)s%(title)s.%(ext)s',
+            
+            # SPEED OPTIMIZATIONS
+            'concurrent_fragment_downloads': 15, # Download 15 segments in parallel
+            'retries': 10,
+            'fragment_retries': 10,
+            'buffersize': 1024 * 1024,
+            
+            # COMPATIBILITY
+            'windowsfilenames': True,
         }
 
-        # 2. Extract Metadata to decide folder structure
-        log("Analyzing URL...")
-        with yt_dlp.YoutubeDL({'noplaylist': False, 'quiet': True, 'logger': YtDlpLogger()}) as ydl_meta:
-            try:
-                info_dict = ydl_meta.extract_info(url, download=False)
-            except Exception as e:
-                log(f"Metadata extraction failed: {e}")
-                # Fallback to standard download if extraction fails
-                info_dict = None
-
-        # 3. Determine Output Template
-        # Default: Root folder
-        final_outtmpl = os.path.join(path, '%(title)s.%(ext)s')
-        
-        if info_dict:
-            # Check if it's a playlist
-            if 'entries' in info_dict or info_dict.get('_type') == 'playlist':
-                 playlist_title = info_dict.get('title') or "Playlist_Unknown"
-                 # Sanitize folder name (simple replace)
-                 playlist_title = "".join([c for c in playlist_title if c.isalnum() or c in (' ', '-', '_')]).strip()
-                 if not playlist_title: playlist_title = "Playlist"
-                 
-                 log(f"Playlist detected: '{playlist_title}'. Creating subfolder.")
-                 final_outtmpl = os.path.join(path, playlist_title, '%(title)s.%(ext)s')
-            else:
-                 log("Single video detected. Downloading to root.")
-
-        ydl_opts_base['outtmpl'] = final_outtmpl
+        log("Initializing and Optimizing Download...")
+        # (Metadata extraction step removed - integrated into download for speed)
 
         # 4. Add Format/Quality Options (Same as before)
         import re
