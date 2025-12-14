@@ -73,23 +73,6 @@ class YouTubeDownloaderApp(ctk.CTk):
         self.main.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
         self.main.grid_columnconfigure(0, weight=1)
 
-    def update_options(self, value):
-        if value == "Vidéo":
-            formats = ["mp4", "mkv", "webm"]
-            qualities = ["2160p (4K)", "1440p", "1080p", "720p", "480p", "360p", "240p", "144p"]
-            self.format_var.set("mp4")
-            self.quality_var.set("1080p")
-        else: # Audio
-            formats = ["mp3", "m4a", "opus", "wav"]
-            qualities = ["320 kbps", "256 kbps", "192 kbps", "128 kbps", "96 kbps", "64 kbps"]
-            self.format_var.set("mp3")
-            self.quality_var.set("192 kbps")
-        
-        self.format_menu.configure(values=formats)
-        self.quality_menu.configure(values=qualities)
-        self.main.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
-        self.main.grid_columnconfigure(0, weight=1)
-
         # Inputs
         ctk.CTkLabel(self.main, text="YouTube URL:").grid(row=0, column=0, sticky="w")
         ctk.CTkEntry(self.main, textvariable=self.url_var, placeholder_text="Paste link here...").grid(row=1, column=0, sticky="ew", pady=(0,20))
@@ -105,6 +88,7 @@ class YouTubeDownloaderApp(ctk.CTk):
         self.btn = ctk.CTkButton(self.main, text="DOWNLOAD", command=self.start_thread, height=50, font=ctk.CTkFont(size=16, weight="bold"))
         self.btn.grid(row=3, column=0, sticky="ew", pady=10)
 
+        # Progress
         self.progress = ctk.CTkProgressBar(self.main)
         self.progress.grid(row=4, column=0, sticky="ew", pady=10)
         self.progress.set(0)
@@ -119,6 +103,21 @@ class YouTubeDownloaderApp(ctk.CTk):
         self.log_textbox.configure(state="disabled")
         
         self.main.grid_rowconfigure(7, weight=1)
+
+    def update_options(self, value):
+        if value == "Vidéo":
+            formats = ["mp4", "mkv", "webm"]
+            qualities = ["2160p (4K)", "1440p", "1080p", "720p", "480p", "360p", "240p", "144p"]
+            self.format_var.set("mp4")
+            self.quality_var.set("1080p")
+        else: # Audio
+            formats = ["mp3", "m4a", "opus", "wav"]
+            qualities = ["320 kbps", "256 kbps", "192 kbps", "128 kbps", "96 kbps", "64 kbps"]
+            self.format_var.set("mp3")
+            self.quality_var.set("192 kbps")
+        
+        self.format_menu.configure(values=formats)
+        self.quality_menu.configure(values=qualities)
 
     def browse(self):
         d = filedialog.askdirectory()
