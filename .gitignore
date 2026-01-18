@@ -6,3 +6,11 @@ dist/
 *.spec
 Downloads_YT/
 .DS_Store
+# VS Code
+.vscode/
+
+# FFmpeg local files
+bin/
+ffmpeg.zip
+*.exe
+!run.bat

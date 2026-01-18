@@ -111,7 +111,7 @@ class YouTubeDownloaderApp(ctk.CTk):
             self.format_var.set("mp4")
             self.quality_var.set("1080p")
         else: # Audio
-            formats = ["mp3", "m4a", "opus", "wav"]
+            formats = ["mp3", "m4a", "opus", "wav", "wma"]
             qualities = ["320 kbps", "256 kbps", "192 kbps", "128 kbps", "96 kbps", "64 kbps"]
             self.format_var.set("mp3")
             self.quality_var.set("192 kbps")
@@ -141,9 +141,12 @@ class YouTubeDownloaderApp(ctk.CTk):
         qual = self.quality_var.get()
         fmt = self.format_var.get()
         
-        def update_prog(val):
+        def update_prog(val, msg=None):
             self.progress.set(val)
-            self.pct_label.configure(text=f"{int(val*100)}%")
+            if msg:
+                self.pct_label.configure(text=msg)
+            else:
+                self.pct_label.configure(text=f"{int(val*100)}%")
         
         res = self.manager.start_download(url, path, mode, qual, fmt, update_prog)
         

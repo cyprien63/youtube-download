@@ -2,6 +2,7 @@ import os
 import shutil
 import yt_dlp
 from utils import log
+from ffmpeg_manager import get_ffmpeg_path
 
 try:
     from pytubefix import YouTube
@@ -49,7 +50,8 @@ class DownloadManager:
         return success
 
     def _download_ytdlp(self, url, path, mode, quality, fmt, progress_callback):
-        has_ffmpeg = shutil.which('ffmpeg') is not None
+        ffmpeg_bin = get_ffmpeg_path()
+        has_ffmpeg = ffmpeg_bin is not None
         
         if not has_ffmpeg and (mode == "Audio" and fmt != "m4a"):
             log("WARNING: FFmpeg missing. Converting to selected audio format might fail.")
@@ -73,6 +75,9 @@ class DownloadManager:
                         if match:
                             progress_callback(float(match.group(1)) / 100)
                     except: pass
+                    log(clean_msg)
+                elif clean_msg.startswith('[ExtractAudio]') or clean_msg.startswith('[Merger]') or clean_msg.startswith('[Fixup]'):
+                    progress_callback(1.0, "Conversion/Fusion...")
                     log(clean_msg)
                 else:
                     log(clean_msg)
@@ -105,9 +110,12 @@ class DownloadManager:
             'fragment_retries': 10,
             'buffersize': 1024 * 1024,
             
-            # COMPATIBILITY
+            # DOMAINS compatibility
             'windowsfilenames': True,
         }
+        
+        if ffmpeg_bin and ffmpeg_bin != "ffmpeg":
+            ydl_opts_base['ffmpeg_location'] = ffmpeg_bin
 
         log("Initializing and Optimizing Download...")
         # (Metadata extraction step removed - integrated into download for speed)
@@ -158,7 +166,7 @@ class DownloadManager:
             total_size = stream.filesize
             bytes_downloaded = total_size - bytes_remaining
             val = bytes_downloaded / total_size
-            progress_callback(val)
+            progress_callback(val, None)
 
         yt = YouTube(url, on_progress_callback=pytube_progress)
         

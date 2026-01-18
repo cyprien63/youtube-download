@@ -2,7 +2,7 @@
 
 **UltraYouTube Downloader** est une application de bureau professionnelle conçue pour télécharger des vidéos et musiques YouTube avec une fiabilité maximale.
 
-Contrairement aux autres téléchargeurs qui cessent de fonctionner dès que YouTube change son code, ce logiciel utilise une **architecture à double moteur** (Hybrid Engine) : il combine la puissance de `yt-dlp` (le standard de l'industrie) avec la flexibilité de `pytubefix` en cas de panne.
+Contrairement aux autres téléchargeurs qui cessent de fonctionner dès que YouTube change son code, ce logiciel utilise une **architecture à double moteur** (Hybrid Engine) et gère lui-même ses dépendances (comme FFmpeg).
 
 ---
 
@@ -15,91 +15,55 @@ Vous n'avez besoin d'aucune connaissance technique.
    👉 **`run.bat`**
 
 **C'est tout.** Le script va automatiquement :
+
 - Vérifier si Python est installé (et l'installer sinon).
-- Créer une zone isolée pour le logiciel (environnement virtuel).
+- Créer une zone isolée pour le logiciel.
 - Installer les bibliothèques nécessaires.
+- **Télécharger et configurer FFmpeg** automatiquement pour la conversion audio/vidéo.
 - Lancer l'interface.
 
 ---
 
 ## ✨ Fonctionnalités Clés
 
-*   **⚡ Haute Vitesse** : Téléchargement multi-segmenté (jusqu'à 15 connexions simultanées).
-*   **🛡️ Robustesse (Failover)** : Si le moteur principal (`yt-dlp`) échoue sur une vidéo spécifique, le logiciel bascule automatiquement sur le moteur de secours (`pytubefix`).
-*   **📺 Qualité Maximale** : Supporte la 4K (2160p), 1440p, 1080p, etc.
-*   **🎵 Audio Haute Fidélité** : Conversion en MP3, M4A, WAV avec sélection du bitrate (320kbps, etc.).
-*   **🔄 Mises à jour Auto** : Le logiciel vérifie automatiquement GitHub au démarrage pour se mettre à jour.
+- **⚡ Haute Vitesse** : Téléchargement multi-segmenté.
+- **🛡️ Robustesse** : Moteur hybride `yt-dlp` (principal) + `pytubefix` (secours).
+- **📺 Qualité Maximale** : Support natif 4K/8K, 1440p, 1080p (fusion audio/vidéo automatique).
+- **🎵 Audio Avancé** : Conversion automatique en **MP3, M4A, WAV, OPUS, WMA**.
+- **👁️ Interface Claire** : Indicateur visuel "Conversion/Fusion..." pour ne jamais penser que l'app est plantée.
+- **🔧 Auto-Configuration** : Plus besoin d'installer FFmpeg manuellement, le logiciel s'en occupe.
 
 ---
 
-## 🧠 Comment ça marche ? (Analyse du Code)
+## 🧠 Architecture Technique
 
-Si vous êtes développeur ou curieux, voici comment le projet est architecturé. Le code est modulaire pour faciliter la maintenance.
+### 1. Lanceur Intelligent (`run.bat`)
 
-### 1. Le Lanceur (`run.bat`)
-C'est le point d'entrée pour Windows. C'est un script Batch avancé qui agit comme un "installateur silencieux".
-- Il vérifie la présence de `winget` et de `python`.
-- Si Python manque, il le télécharge et l'installe sans intervention utilisateur.
-- Il configure un environnement virtuel `.venv` pour ne pas polluer votre système.
-- Il lance `main.py`.
+Script d'amorçage qui garantit un environnement sain (Python 3.10+, venv propre) avant de lancer l'application.
 
-### 2. Le Gestionnaire (`main.py`)
-C'est le cerveau administratif de l'application. Avant de lancer l'interface, il effectue des tâches critiques :
-- **Auto-Update** : Il compare la version locale (`version.py`) avec celle sur GitHub. Si une nouvelle version existe, il fait un `git pull` automatique.
-- **Vérification des dépendances** : Il s'assure que `yt-dlp`, `customtkinter` et `pytubefix` sont installés/réparés.
-- Enfin, il importe et lance `gui.py`.
+### 2. Gestionnaire de Dépendances (`ffmpeg_manager.py`)
 
-### 3. L'Interface (`gui.py`)
-Utilise **CustomTkinter** pour une interface moderne et sombre.
-- **Threading** : L'interface ne "gèle" jamais pendant un téléchargement. L'action est envoyée dans un *thread* (processus parallèle) via la méthode `start_thread`.
-- **Logs en temps réel** : Redirige la sortie du téléchargement vers la zone de texte en bas de l'application pour que vous voyiez exactement ce qui se passe.
+Nouveauté majeure : au premier lancement, ce module détecte l'absence de FFmpeg et télécharge une version statique portable dans un dossier `bin/` local. Cela garantit que la conversion format (ex: mp4 -> mp3) fonctionne sur 100% des machines sans configuration.
 
-### 4. Le Moteur de Téléchargement (`downloader.py`)
-C'est ici que réside l'intelligence du téléchargement.
-- **Classe `DownloadManager`** : Elle contient la logique "Try/Catch".
-- **Étape 1 (yt-dlp)** : Tente de télécharger avec `yt-dlp` en utilisant des options optimisées (fichiers temporaires, fusion audio/vidéo via FFmpeg si présent).
-- **Étape 2 (Fallback)** : Si une erreur survient, il capture l'exception et lance `_download_pytube` qui utilise la librairie `pytubefix`.
-- **Gestion FFmpeg** : Le script détecte si FFmpeg est installé sur le PC. S'il est là, il permet de fusionner la meilleure piste vidéo (souvent sans son en 1080p+) avec la meilleure piste audio. Sinon, il se rabat sur les formats standards (720p max souvent).
+### 3. Moteur Logiciel (`downloader.py`)
 
-### 5. Les Utilitaires (`utils.py`)
-Un système de logging thread-safe. Il permet d'écrire des messages depuis n'importe quel fichier (`log("message")`) qui seront affichés à la fois dans la console du développeur et dans la zone de texte de l'interface graphique.
+- Utilise `yt-dlp` avec des paramètres optimisés.
+- Détecte les étapes de conversion et renvoie des feedbacks précis à l'interface ("Conversion en cours...").
+- Mode fallback sur `pytubefix` si l'API principale est bloquée.
+
+### 4. Interface (`gui.py`)
+
+Interface sombre et réactive basée sur `customtkinter`. Elle reste fluide (multi-thread) même pendant les gros téléchargements.
 
 ---
 
-## 🛠️ Installation Manuelle (Développeurs)
+## ❓ FAQ
 
-Si vous ne souhaitez pas utiliser `run.bat`, vous pouvez utiliser les commandes standards :
+**Q: Le téléchargement semble bloqué à 100% ?**
+R: Regardez la barre de texte. Si elle indique "Conversion/Fusion...", c'est normal ! Le logiciel est en train de transformer le fichier brut (ex: webm) en fichier fini (ex: mp3). Cela peut prendre 10 à 60 secondes selon la puissance de votre PC.
 
-**Pré-requis** : Python 3.10+ et Git.
+**Q: J'ai un message "FFmpeg not found. Downloading..." ?**
+R: C'est normal lors de la toute première utilisation. Le logiciel récupère les outils nécessaires. Cela ne se produira qu'une fois.
 
-```bash
-# 1. Cloner le repo
-git clone https://github.com/votre-repo/youtube-download.git
-cd youtube-download
-
-# 2. Créer l'environnement virtuel
-python -m venv .venv
-
-# 3. Activer l'environnement
-# Windows :
-.\.venv\Scripts\activate
-# Mac/Linux :
-source .venv/bin/activate
-
-# 4. Installer les dépendances
-pip install -r requirements.txt
-
-# 5. Lancer
-python main.py
-```
-
-## ❓ FAQ Technique
-
-**Q: Pourquoi les vidéos 1080p n'ont pas de son parfois ?**
-R: YouTube sépare les flux vidéo et audio pour les hautes qualités (DASH). Pour les recombiner, le logiciel a besoin de **FFmpeg**. Si vous n'avez pas FFmpeg, le logiciel essaiera de trouver la meilleure qualité "unique" (souvent 720p).
-
-**Q: Le téléchargement reste à 0% ?**
-R: Vérifiez votre connexion internet. Si cela persiste, YouTube a peut-être bloqué votre IP temporairement ou changé son code (le logiciel basculera sur le moteur de secours, mais cela peut prendre quelques secondes).
-
-**Q: Où sont les fichiers ?**
-R: Par défaut dans un dossier `Downloads_YT` créé à côté du logiciel, ou là où vous l'avez indiqué via le bouton "Browse".
+**Q: Où sont mes fichiers ?**
+R: Par défaut dans le dossier `Downloads_YT` à côté du logiciel.
