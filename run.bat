@@ -1,4 +1,5 @@
 @echo off
+cd /d "%~dp0"
 TITLE UltraYouTube Downloader Launcher
 CLS
 
