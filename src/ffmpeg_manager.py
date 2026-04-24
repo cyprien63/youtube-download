@@ -3,7 +3,7 @@ import shutil
 import zipfile
 import urllib.request
 import ssl
-from utils import log
+from .utils import log
 
 # URL to a static build of FFmpeg for Windows
 FFMPEG_URL = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"

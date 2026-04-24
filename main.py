@@ -127,10 +127,11 @@ def install_requirements():
         import customtkinter
         import yt_dlp
         import pytubefix
+        import PIL
     except ImportError:
         print("Missing libraries detected or need update. Installing...")
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install"] + reqs)
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade"] + reqs)
             print("Installation complete.")
         except Exception as e:
             print(f"Failed to install requirements: {e}")
@@ -145,7 +146,7 @@ if __name__ == "__main__":
 
     # 2. LAUNCH GUI
     try:
-        from gui import YouTubeDownloaderApp
+        from src.gui import YouTubeDownloaderApp
         app = YouTubeDownloaderApp()
         app.mainloop()
     except Exception as e:

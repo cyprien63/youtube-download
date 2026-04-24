@@ -1,8 +1,8 @@
 import os
 import shutil
 import yt_dlp
-from utils import log
-from ffmpeg_manager import get_ffmpeg_path
+from .utils import log
+from .ffmpeg_manager import get_ffmpeg_path
 
 try:
     from pytubefix import YouTube
@@ -53,6 +53,14 @@ class DownloadManager:
         ffmpeg_bin = get_ffmpeg_path()
         has_ffmpeg = ffmpeg_bin is not None
         
+        # Determine ffmpeg folder for yt-dlp
+        ffmpeg_dir = None
+        if has_ffmpeg:
+            if ffmpeg_bin == "ffmpeg":
+                ffmpeg_dir = None # Use system PATH
+            else:
+                ffmpeg_dir = os.path.dirname(ffmpeg_bin)
+
         if not has_ffmpeg and (mode == "Audio" and fmt != "m4a"):
             log("WARNING: FFmpeg missing. Converting to selected audio format might fail.")
 
@@ -76,51 +84,44 @@ class DownloadManager:
                             progress_callback(float(match.group(1)) / 100)
                     except: pass
                     log(clean_msg)
-                elif clean_msg.startswith('[ExtractAudio]') or clean_msg.startswith('[Merger]') or clean_msg.startswith('[Fixup]'):
+                elif any(x in clean_msg for x in ['[ExtractAudio]', '[Merger]', '[Fixup]', '[VideoConvertor]']):
                     progress_callback(1.0, "Conversion/Fusion...")
                     log(clean_msg)
                 else:
                     log(clean_msg)
 
         # 1. Base Options & Performance Optimization
-        
-        # Intelligent Playlist Detection
-        # If it's a specific video (has v= or shorts), we generally want just that video
-        # even if it's linked from a playlist context.
-        # We only download full playlist if it's a playlist view (list= X, no video param).
         is_playlist_view = "list=" in url and "watch?" not in url and "v=" not in url
         
-        if is_playlist_view:
-            log("Mode detected: Playlist/Album (Full Download)")
-        else:
-            log("Mode detected: Single Video (Ignoring List params)")
-
         ydl_opts_base = {
             'noplaylist': not is_playlist_view,
             'logger': YtDlpLogger(),
-            # Path handling: force usage of provided path as base
             'paths': {'home': path},
-            # Template: If playlist_title exists, create subfolder, else root.
-            # Syntax: %(field&{}/|)s -> if field exists, insert "{field}/", else nothing.
             'outtmpl': '%(playlist_title&{}/|)s%(title)s.%(ext)s',
             
             # SPEED OPTIMIZATIONS
-            'concurrent_fragment_downloads': 15, # Download 15 segments in parallel
+            'concurrent_fragment_downloads': 15,
             'retries': 10,
             'fragment_retries': 10,
             'buffersize': 1024 * 1024,
-            
-            # DOMAINS compatibility
             'windowsfilenames': True,
+            
+            # FIX 403 & RELIABILITY
+            'nocheckcertificate': True,
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'web'],
+                    'player_skip': ['webpage', 'configs']
+                }
+            },
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
         
-        if ffmpeg_bin and ffmpeg_bin != "ffmpeg":
-            ydl_opts_base['ffmpeg_location'] = ffmpeg_bin
+        if ffmpeg_dir:
+            ydl_opts_base['ffmpeg_location'] = ffmpeg_dir
 
         log("Initializing and Optimizing Download...")
-        # (Metadata extraction step removed - integrated into download for speed)
 
-        # 4. Add Format/Quality Options (Same as before)
         import re
         q_val = 0
         try:
@@ -129,21 +130,20 @@ class DownloadManager:
         except: pass
 
         if mode == "Audio":
+            # Force audio extraction
             ydl_opts_base['format'] = 'bestaudio/best'
-            post_args = []
             if has_ffmpeg:
-                post_args.append({
+                ydl_opts_base['postprocessors'] = [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': fmt,
                     'preferredquality': str(q_val) if q_val > 0 else '192',
-                })
+                }]
             else:
-                if fmt == "m4a": ydl_opts_base['format'] = 'bestaudio[ext=m4a]/bestaudio'
-                else:
-                    log(f"FFmpeg missing: Cannot force {fmt} {q_val}k. Downloading best m4a.")
+                if fmt == "m4a": 
                     ydl_opts_base['format'] = 'bestaudio[ext=m4a]/bestaudio'
-
-            if post_args: ydl_opts_base['postprocessors'] = post_args
+                else:
+                    log(f"FFmpeg missing: Cannot convert to {fmt}. Downloading best available audio (m4a/webm).")
+                    ydl_opts_base['format'] = 'bestaudio/best'
 
         else: # Video
             if has_ffmpeg:
@@ -161,7 +161,8 @@ class DownloadManager:
             ydl.download([url])
 
     def _download_pytube(self, url, path, mode, quality, fmt, progress_callback):
-        # Pytube is less flexible, we do best effort mapping
+        ffmpeg_bin = get_ffmpeg_path()
+        
         def pytube_progress(stream, chunk, bytes_remaining):
             total_size = stream.filesize
             bytes_downloaded = total_size - bytes_remaining
@@ -170,7 +171,6 @@ class DownloadManager:
 
         yt = YouTube(url, on_progress_callback=pytube_progress)
         
-        # Parse Quality INT
         import re
         q_val = 0
         try:
@@ -179,42 +179,43 @@ class DownloadManager:
         except: pass
 
         if mode == "Audio":
-            # Pytube basically just has "get_audio_only". Bitrate selection is limited.
-            # We filter by likely abr if possible, else take best.
-            log(f"pytubefix: Downloading Audio (target ~{q_val}k)")
-            streams = yt.streams.filter(only_audio=True)
-            # Try to find match
-            stream = streams.filter(abr=f"{q_val}kbps").first()
-            if not stream:
-                stream = streams.order_by('abr').desc().first()
-            
-            # Note: Pytube usually downloads mp4 audio or webm audio. Converting to mp3/wav requires ffmpeg manually.
-            # We will just download what it gives (usually m4a/webm) and rename if simple, but real conversion needs tools.
-            log(f"Selected: {stream.abr} {stream.mime_type}")
-            
-        else: # Video
-            log(f"pytubefix: Downloading Video (target <={q_val}p, {fmt})")
-            # Progressive (single file) usually maxes at 720p
-            # Adaptive requires merging (ffmpeg). Pytube doesn't merge auto.
-            # So we stick to progressive if likely, or adaptive if we accept separate files (but user wants 1 file).
-            # We will force progressive for stability in "Fallback" mode.
-            
-            streams = yt.streams.filter(progressive=True, file_extension='mp4') # Pytube mostly does mp4 progressive
-            
-            if q_val >= 1080:
-                # Progressive rarely has 1080p.
-                stream = streams.get_highest_resolution() 
-                log("Note: Pytube progressive limited to 720p usually.")
-            elif q_val > 0:
-                 stream = streams.filter(res=f"{q_val}p").first()
-                 if not stream: stream = streams.get_by_resolution(f"{q_val}p")
-                 if not stream: stream = streams.order_by('resolution').desc().first()
-            else:
-                 stream = streams.get_highest_resolution()
+            log(f"pytubefix: Downloading Audio...")
+            stream = yt.streams.filter(only_audio=True).order_by('abr').desc().first()
+        else:
+            log(f"pytubefix: Downloading Video...")
+            stream = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first()
 
         if stream:
-            out_file = stream.download(output_path=path)
-            # Basic rename for audio if it came as mp4 but user wanted mp3 (fake rename, not conversion)
-            # But dangerous without conversion. We leave it as is for safety in fallback mode.
+            downloaded_file = stream.download(output_path=path)
+            
+            # CONVERSION STEP (if needed and ffmpeg exists)
+            current_ext = os.path.splitext(downloaded_file)[1].replace(".", "")
+            if ffmpeg_bin and current_ext != fmt:
+                progress_callback(1.0, "Conversion (Secours)...")
+                log(f"Converting {current_ext} to {fmt}...")
+                
+                base_path = os.path.splitext(downloaded_file)[0]
+                final_file = f"{base_path}.{fmt}"
+                
+                # If file already exists, remove it
+                if os.path.exists(final_file):
+                    try: os.remove(final_file)
+                    except: pass
+                
+                import subprocess
+                try:
+                    cmd = [ffmpeg_bin, "-y", "-i", downloaded_file]
+                    if mode == "Audio":
+                        cmd += ["-vn", "-ab", f"{q_val}k" if q_val > 0 else "192k"]
+                    cmd.append(final_file)
+                    
+                    subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+                    
+                    # Cleanup original
+                    try: os.remove(downloaded_file)
+                    except: pass
+                    log(f"Success: {fmt} created.")
+                except Exception as e:
+                    log(f"Conversion error: {e}")
         else:
             raise Exception("No suitable stream found.")

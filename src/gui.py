@@ -4,8 +4,8 @@ from tkinter import filedialog
 import threading
 import os
 import sys
-from utils import logger, log
-from downloader import DownloadManager
+from .utils import logger, log
+from .downloader import DownloadManager
 from version import VERSION
 
 APP_NAME = "UltraYouTube Downloader"
