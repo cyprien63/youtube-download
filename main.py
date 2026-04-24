@@ -1,22 +1,29 @@
 import sys
 import subprocess
 import os
+import urllib.request
 
 # 1. SETUP / AUTO-REPAIR
-# 1. SETUP / AUTO-REPAIR
 def get_remote_version():
-    """Fetches VERSION from remote version.py without pulling."""
+    """Fetches VERSION from GitHub raw version.py."""
+    url = "https://raw.githubusercontent.com/cyprien63/youtube-download/main/version.py"
     try:
-        # Fetch latest meta without merging
-        subprocess.check_call(["git", "fetch"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        # Read the file from origin/main
-        content = subprocess.check_output(["git", "show", "origin/main:version.py"], stderr=subprocess.STDOUT).decode()
-        # Parse it manually (it's just VERSION = "x.y.z")
-        for line in content.splitlines():
-            if line.startswith("VERSION"):
-                return line.split('"')[1]
-    except Exception:
-        return None
+        with urllib.request.urlopen(url, timeout=5) as response:
+            content = response.read().decode('utf-8')
+            for line in content.splitlines():
+                if line.startswith("VERSION"):
+                    return line.split('"')[1]
+    except Exception as e:
+        print(f"   ⚠️ Erreur lecture distante (urllib): {e}")
+        # Fallback to git method
+        try:
+            subprocess.check_call(["git", "fetch"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            content = subprocess.check_output(["git", "show", "origin/main:version.py"], stderr=subprocess.STDOUT).decode()
+            for line in content.splitlines():
+                if line.startswith("VERSION"):
+                    return line.split('"')[1]
+        except Exception:
+            return None
     return None
 
 def is_newer(remote_ver, local_ver):

@@ -93,6 +93,11 @@ class DownloadManager:
         # 1. Base Options & Performance Optimization
         is_playlist_view = "list=" in url and "watch?" not in url and "v=" not in url
         
+        if is_playlist_view:
+            log("Mode detected: Playlist/Album (Full Download)")
+        else:
+            log("Mode detected: Single Video (Ignoring List params)")
+
         ydl_opts_base = {
             'noplaylist': not is_playlist_view,
             'logger': YtDlpLogger(),
