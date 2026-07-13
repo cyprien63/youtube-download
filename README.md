@@ -1,6 +1,6 @@
-# 📺 UltraYouTube Downloader
+# 📺 YouTube Downloader
 
-**UltraYouTube Downloader** est une application de bureau professionnelle conçue pour télécharger des vidéos et musiques YouTube avec une fiabilité maximale.
+**YouTube Downloader** est une application de bureau professionnelle conçue pour télécharger des vidéos et musiques YouTube avec une fiabilité maximale.
 
 Contrairement aux autres téléchargeurs qui cessent de fonctionner dès que YouTube change son code, ce logiciel utilise une **architecture à double moteur** (Hybrid Engine) et gère lui-même ses dépendances (comme FFmpeg).
 

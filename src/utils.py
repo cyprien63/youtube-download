@@ -1,60 +1,62 @@
 import sys
 import threading
 import datetime
-import os
+from typing import Optional
+
 
 class Logger:
-    """Redirects stdout/logs to the GUI console."""
+    """Redirige les logs vers la zone de texte GUI (thread-safe)."""
+
     def __init__(self, text_widget=None):
         self.text_widget = text_widget
-        self.queue = []
+        self.queue: list[str] = []
 
-    def set_widget(self, widget):
+    def set_widget(self, widget) -> None:
         self.text_widget = widget
-        # Flush queue
         for msg in self.queue:
-            self.write_to_widget(msg)
+            self._write_to_widget(msg)
         self.queue = []
 
-    def write(self, message):
-        if not message: return
-        
-        # Always print to real stdout for debug
+    def write(self, message: str) -> None:
+        if not message:
+            return
+
         sys.__stdout__.write(message)
 
         if not self.text_widget:
             self.queue.append(message)
             return
 
-        self.write_to_widget(message)
+        self._write_to_widget(message)
 
-    def write_to_widget(self, message):
-        def append():
+    def _write_to_widget(self, message: str) -> None:
+        def append() -> None:
             try:
                 self.text_widget.configure(state="normal")
                 timestamp = datetime.datetime.now().strftime("%H:%M:%S")
                 if message.strip():
-                     self.text_widget.insert("end", f"[{timestamp}] {message}")
+                    self.text_widget.insert("end", f"[{timestamp}] {message}")
                 else:
                     self.text_widget.insert("end", message)
                 self.text_widget.see("end")
                 self.text_widget.configure(state="disabled")
-            except:
-                pass 
-        
+            except Exception as e:
+                sys.__stderr__.write(f"[Logger] Erreur GUI: {e}\n")
+
         if threading.current_thread() is threading.main_thread():
             append()
         else:
             try:
                 self.text_widget.after(0, append)
-            except:
-                pass
+            except Exception as e:
+                sys.__stderr__.write(f"[Logger] Erreur after(): {e}\n")
 
-    def flush(self):
+    def flush(self) -> None:
         pass
 
-# Global logger instance to be used across modules
-logger = Logger()
 
-def log(msg):
+logger: Logger = Logger()
+
+
+def log(msg: str) -> None:
     logger.write(msg + "\n")

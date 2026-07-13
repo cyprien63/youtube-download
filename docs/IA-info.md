@@ -1,9 +1,9 @@
-# 🧠 Documentation Technique - UltraYouTube Downloader
+# 🧠 Documentation Technique - YouTube Downloader
 
 Ce document est destiné à fournir une vue d'ensemble technique du projet pour une IA ou un développeur souhaitant comprendre, maintenir ou améliorer le logiciel.
 
 ## 📌 Informations Générales
-- **Nom du projet** : UltraYouTube Downloader
+- **Nom du projet** : YouTube Downloader
 - **Version actuelle** : Voir `version.py`
 - **Langage** : Python 3.10+
 - **Interface** : CustomTkinter (Moderne, Dark Mode)

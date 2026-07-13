@@ -1,6 +1,6 @@
 @echo off
 cd /d "%~dp0"
-TITLE UltraYouTube Downloader Launcher
+TITLE YouTube Downloader Launcher
 CLS
 
 REM 1. VERIFICATION DE PYTHON
@@ -61,13 +61,15 @@ IF NOT ERRORLEVEL 1 GOTO SETUP_VENV
 
 ECHO [Launcher] Recherche de l'executable Python installe...
 
-IF EXIST "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
-    SET PYTHON_CMD="%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
-    GOTO SETUP_VENV
-)
-IF EXIST "%ProgramFiles%\Python312\python.exe" (
-    SET PYTHON_CMD="%ProgramFiles%\Python312\python.exe"
-    GOTO SETUP_VENV
+FOR %%V IN (312 311 310) DO (
+    IF EXIST "%LOCALAPPDATA%\Programs\Python\Python%%V\python.exe" (
+        SET PYTHON_CMD="%LOCALAPPDATA%\Programs\Python\Python%%V\python.exe"
+        GOTO SETUP_VENV
+    )
+    IF EXIST "%ProgramFiles%\Python%%V\python.exe" (
+        SET PYTHON_CMD="%ProgramFiles%\Python%%V\python.exe"
+        GOTO SETUP_VENV
+    )
 )
 
 CLS
