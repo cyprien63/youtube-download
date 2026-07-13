@@ -10,14 +10,15 @@ from .utils import log
 FFMPEG_URL = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
 FFMPEG_URL_BACKUP = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
 
-# Dossier du script courant — fonctionne quel que soit le cwd
 _SCRIPT_DIR: str = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT: str = os.path.dirname(_SCRIPT_DIR)
 BIN_DIR: str = os.path.join(_PROJECT_ROOT, "bin")
 
+DOWNLOAD_TIMEOUT = 120
+
 
 def get_ffmpeg_path() -> Optional[str]:
-    """Retourne le chemin vers ffmpeg. Le télécharge si absent."""
+    """Retourne le chemin vers ffmpeg. Le telecharge si absent."""
     if shutil.which("ffmpeg"):
         return "ffmpeg"
 
@@ -29,7 +30,7 @@ def get_ffmpeg_path() -> Optional[str]:
 
 
 def download_ffmpeg() -> Optional[str]:
-    """Télécharge un build statique de FFmpeg dans bin/."""
+    """Telecharge un build statique de FFmpeg dans bin/."""
     log("FFmpeg introuvable. Telechargement en cours (cela peut prendre une minute)...")
     if not os.path.exists(BIN_DIR):
         try:
@@ -45,19 +46,18 @@ def download_ffmpeg() -> Optional[str]:
 
         log("Connexion au serveur...")
         try:
-            with urllib.request.urlopen(FFMPEG_URL, context=ctx, timeout=60) as response, \
+            with urllib.request.urlopen(FFMPEG_URL, context=ctx, timeout=DOWNLOAD_TIMEOUT) as response, \
                  open(zip_path, 'wb') as out_file:
                 shutil.copyfileobj(response, out_file)
         except Exception as e:
             log(f"URL principale echouee: {e}. Tentative avec l'URL de secours...")
-            with urllib.request.urlopen(FFMPEG_URL_BACKUP, context=ctx, timeout=60) as response, \
+            with urllib.request.urlopen(FFMPEG_URL_BACKUP, context=ctx, timeout=DOWNLOAD_TIMEOUT) as response, \
                  open(zip_path, 'wb') as out_file:
                 shutil.copyfileobj(response, out_file)
 
         log("Telechargement termine. Extraction en cours...")
 
         found_ffmpeg = False
-        found_ffprobe = False
 
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             for file in zip_ref.namelist():
@@ -67,23 +67,23 @@ def download_ffmpeg() -> Optional[str]:
                     found_ffmpeg = True
                 elif lower_name.endswith("bin/ffprobe.exe") or lower_name.endswith("ffprobe.exe"):
                     _extract_file(zip_ref, file, "ffprobe.exe")
-                    found_ffprobe = True
 
         if found_ffmpeg:
             log("FFmpeg installe avec succes.")
         else:
             log("ERREUR: ffmpeg.exe introuvable dans l'archive telechargee.")
 
-        try:
-            os.remove(zip_path)
-        except OSError:
-            pass
-
         return os.path.join(BIN_DIR, "ffmpeg.exe") if found_ffmpeg else None
 
     except Exception as e:
         log(f"Erreur telechargement/installation FFmpeg: {e}")
         return None
+    finally:
+        try:
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+        except OSError:
+            pass
 
 
 def _extract_file(zip_ref: zipfile.ZipFile, member_name: str, target_name: str) -> None:

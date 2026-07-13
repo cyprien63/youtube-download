@@ -1,3 +1,4 @@
+import glob
 import os
 import re
 import subprocess
@@ -12,7 +13,6 @@ from .ffmpeg_manager import get_ffmpeg_path
 
 try:
     from pytubefix import YouTube
-    import pytubefix.exceptions
 except ImportError:
     YouTube = None
 
@@ -48,13 +48,13 @@ _YT_CLIENT_STRATEGIES = [
     },
 ]
 
+RETRY_BACKOFF_SECONDS = 2
+
 
 class _YtDlpLogger:
-    """Logger adapte pour yt-dlp : parse le pourcentage, la vitesse et le temps restant."""
 
     def __init__(self, progress_callback: Callable[[float, Optional[str]], None]) -> None:
         self._progress_callback = progress_callback
-        self._lock = threading.Lock()
 
     def debug(self, msg: str) -> None:
         self._process_msg(msg)
@@ -127,7 +127,6 @@ def _is_shorts_url(url: str) -> bool:
 
 
 def _normalize_shorts_url(url: str) -> str:
-    """Convertit une URL Shorts en URL watch classique pour plus de compatibilite."""
     m = _SHORTS_RE.search(url)
     if m:
         return f"https://www.youtube.com/watch?v={m.group(1)}"
@@ -135,13 +134,19 @@ def _normalize_shorts_url(url: str) -> str:
 
 
 class DownloadManager:
-    """Gere les telechargements via yt-dlp (primaire, multi-strategie) et pytubefix (secours)."""
 
     def __init__(self) -> None:
         self._cancel_event = threading.Event()
+        self._ydl_instance: Optional[yt_dlp.YoutubeDL] = None
 
     def cancel(self) -> None:
         self._cancel_event.set()
+        ydl = self._ydl_instance
+        if ydl is not None:
+            try:
+                ydl.cancel_download()
+            except Exception:
+                pass
 
     def reset_cancel(self) -> None:
         self._cancel_event.clear()
@@ -175,14 +180,13 @@ class DownloadManager:
                 log(f"Erreur creation dossier: {e}")
                 return False
 
-        # 1. yt-dlp avec strategies de retry
-        success = self._download_ytdlp_with_retry(url, path, mode, quality, fmt, progress_callback)
+        success = self._download_ytdlp(url, path, mode, quality, fmt, progress_callback)
         if success:
             return True
 
-        # 2. pytubefix (secours)
         if self.is_cancelled:
             return False
+
         log("Moteur: pytubefix (Secours)...")
         if YouTube is not None:
             try:
@@ -195,10 +199,15 @@ class DownloadManager:
 
         return False
 
-    # ------------------------------------------------------------------
-    # yt-dlp — retry avec strategies multiples
-    # ------------------------------------------------------------------
-    def _download_ytdlp_with_retry(
+    def _get_ffmpeg_info(self) -> tuple[Optional[str], Optional[str]]:
+        ffmpeg_bin = get_ffmpeg_path()
+        if ffmpeg_bin is None:
+            return None, None
+        if ffmpeg_bin == "ffmpeg":
+            return ffmpeg_bin, None
+        return ffmpeg_bin, os.path.dirname(ffmpeg_bin)
+
+    def _download_ytdlp(
         self,
         url: str,
         path: str,
@@ -207,27 +216,18 @@ class DownloadManager:
         fmt: str,
         progress_callback: Callable[[float, Optional[str]], None],
     ) -> bool:
-        ffmpeg_bin = get_ffmpeg_path()
+        ffmpeg_bin, ffmpeg_dir = self._get_ffmpeg_info()
         has_ffmpeg = ffmpeg_bin is not None
+        q_val = _parse_quality(quality)
 
-        ffmpeg_dir: Optional[str] = None
-        if has_ffmpeg and ffmpeg_bin != "ffmpeg":
-            ffmpeg_dir = os.path.dirname(ffmpeg_bin)
-
-        if not has_ffmpeg and mode == "Audio" and fmt != "m4a":
-            log("ATTENTION: FFmpeg manquant. La conversion audio pourrait echouer.")
+        if not has_ffmpeg:
+            log("ATTENTION: FFmpeg introuvable. Les conversions pourraient echouer.")
 
         is_playlist_view = "list=" in url and "watch?" not in url and "v=" not in url
         if is_playlist_view:
-            log("Mode detecte: Playlist/Album (Telechargement complet)")
+            log("Mode detecte: Playlist/Album")
         else:
             log("Mode detecte: Video unique")
-
-        q_val = _parse_quality(quality)
-
-        base_opts = self._build_base_opts(path, is_playlist_view, progress_callback)
-        if ffmpeg_dir:
-            base_opts['ffmpeg_location'] = ffmpeg_dir
 
         for attempt, strategy in enumerate(_YT_CLIENT_STRATEGIES, 1):
             if self.is_cancelled:
@@ -235,23 +235,36 @@ class DownloadManager:
 
             log(f"Essai {attempt}/{len(_YT_CLIENT_STRATEGIES)}: strategie \"{strategy['label']}\"...")
 
-            opts = dict(base_opts)
+            pre_files = set(glob.glob(os.path.join(path, '*'))) if os.path.isdir(path) else set()
+
+            opts = self._build_opts(path, is_playlist_view, progress_callback)
+            if ffmpeg_dir:
+                opts['ffmpeg_location'] = ffmpeg_dir
             opts['extractor_args'] = strategy['extractor_args']
 
-            self._apply_format_opts(opts, mode, fmt, q_val, has_ffmpeg)
+            self._configure_format(opts, mode, fmt, q_val, has_ffmpeg)
 
             try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    ydl.download([url])
+                self._ydl_instance = yt_dlp.YoutubeDL(opts)
+                self._ydl_instance.download([url])
+                self._ydl_instance = None
+
+                if has_ffmpeg and mode == "Video":
+                    post_files = set(glob.glob(os.path.join(path, '*')))
+                    new_files = [f for f in (post_files - pre_files) if os.path.isfile(f)]
+                    self._remux_to_format(new_files, fmt, ffmpeg_bin, progress_callback)
+
                 return True
             except yt_dlp.utils.DownloadError as e:
-                err_msg = str(e).lower()
+                self._ydl_instance = None
                 if self.is_cancelled:
                     return False
                 log(f"[yt-dlp] Echec strategie \"{strategy['label']}\": {e}")
                 if attempt < len(_YT_CLIENT_STRATEGIES):
-                    log("Nouvelle tentative avec strategie differente...")
+                    log(f"Pause de {RETRY_BACKOFF_SECONDS}s...")
+                    time.sleep(RETRY_BACKOFF_SECONDS)
             except Exception as e:
+                self._ydl_instance = None
                 if self.is_cancelled:
                     return False
                 log(f"[yt-dlp] Erreur inattendue: {e}")
@@ -259,19 +272,67 @@ class DownloadManager:
 
         return False
 
-    def _build_base_opts(
+    def _remux_to_format(
+        self,
+        downloaded_files: list[str],
+        target_fmt: str,
+        ffmpeg_bin: str,
+        progress_callback: Callable,
+    ) -> None:
+        for filepath in downloaded_files:
+            if self.is_cancelled:
+                return
+            if not os.path.isfile(filepath):
+                continue
+            current_ext = os.path.splitext(filepath)[1].lstrip('.').lower()
+            if current_ext == target_fmt:
+                continue
+
+            base_path = os.path.splitext(filepath)[0]
+            output_file = f"{base_path}.{target_fmt}"
+
+            log(f"Remux {current_ext.upper()} -> {target_fmt.upper()}...")
+
+            cmd = [ffmpeg_bin, "-y", "-i", filepath, "-c", "copy", output_file]
+
+            creation_flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            try:
+                subprocess.check_call(
+                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    creationflags=creation_flags,
+                )
+                os.remove(filepath)
+                log(f"Remux reussi: {os.path.basename(output_file)}")
+            except subprocess.CalledProcessError as e:
+                log(f"Erreur remux FFmpeg: {e}")
+
+    def _build_opts(
         self, path: str, is_playlist_view: bool, progress_callback: Callable
     ) -> dict:
+        def _progress_hook(d: dict) -> None:
+            if self.is_cancelled:
+                raise yt_dlp.utils.DownloadError("Annule par l'utilisateur.")
+
+        def _postprocessor_hook(d: dict) -> None:
+            status = d.get('status')
+            name = d.get('postprocessor', '')
+            if status == 'started':
+                log(f"[Postprocessor] {name} en cours...")
+                progress_callback(1.0, f"{name}...")
+            elif status == 'finished':
+                log(f"[Postprocessor] {name} termine.")
+
         return {
             'noplaylist': not is_playlist_view,
             'logger': _YtDlpLogger(progress_callback),
             'paths': {'home': path},
-            'outtmpl': '%(playlist_title&{}/|)s%(title)s.%(ext)s',
-            'concurrent_fragment_downloads': 15,
+            'outtmpl': '%(title)s.%(ext)s',
+            'concurrent_fragment_downloads': 10,
             'retries': 10,
             'fragment_retries': 10,
-            'buffersize': 1024 * 1024,
             'windowsfilenames': True,
+            'progress_hooks': [_progress_hook],
+            'postprocessor_hooks': [_postprocessor_hook],
             'user_agent': (
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
                 'AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -279,42 +340,61 @@ class DownloadManager:
             ),
         }
 
-    @staticmethod
-    def _apply_format_opts(opts: dict, mode: str, fmt: str, q_val: int, has_ffmpeg: bool) -> None:
-        log("Initialisation et optimisation du telechargement...")
-
+    def _configure_format(
+        self, opts: dict, mode: str, fmt: str, q_val: int, has_ffmpeg: bool
+    ) -> None:
         if mode == "Audio":
-            opts['format'] = 'bestaudio/best'
-            if has_ffmpeg:
-                opts['postprocessors'] = [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': fmt,
-                    'preferredquality': str(q_val) if q_val > 0 else '192',
-                }]
-            else:
-                if fmt == "m4a":
-                    opts['format'] = 'bestaudio[ext=m4a]/bestaudio'
-                else:
-                    log(f"FFmpeg manquant: impossible de convertir en {fmt}. Telechargement du meilleur audio.")
+            self._configure_audio(opts, fmt, q_val, has_ffmpeg)
         else:
-            if has_ffmpeg:
-                opts['merge_output_format'] = fmt
-                if q_val > 0:
-                    opts['format'] = f'bestvideo[height<={q_val}]+bestaudio/best[height<={q_val}]'
-                else:
-                    opts['format'] = 'bestvideo+bestaudio/best'
-            else:
-                log("FFmpeg manquant: impossible de fusionner les flux haute qualite.")
-                if q_val > 1080:
-                    log("Le 4K necessite normalement FFmpeg.")
-                if q_val > 0:
-                    opts['format'] = f'best[ext={fmt}][height<={q_val}]/best[height<={q_val}]'
-                else:
-                    opts['format'] = f'best[ext={fmt}]/best'
+            self._configure_video(opts, fmt, q_val, has_ffmpeg)
 
-    # ------------------------------------------------------------------
-    # pytubefix (secours) — avec filtrage par qualite
-    # ------------------------------------------------------------------
+    def _configure_audio(self, opts: dict, fmt: str, q_val: int, has_ffmpeg: bool) -> None:
+        opts['format'] = 'bestaudio/best'
+
+        if not has_ffmpeg:
+            log(f"FFmpeg manquant: impossible de convertir en {fmt}. Telechargement du meilleur audio.")
+            return
+
+        audio_codecs = {
+            'mp3': ('libmp3lame', '-q:a 2' if q_val <= 0 else f'-b:a {q_val}k'),
+            'm4a': ('aac', '-c:a copy' if q_val <= 0 else f'-b:a {q_val}k'),
+            'opus': ('libopus', f'-b:a {q_val}k' if q_val > 0 else '-b:a 128k'),
+            'wav': ('pcm_s16le', '-ar 44100'),
+            'wma': ('wmav2', f'-b:a {q_val}k' if q_val > 0 else '192k'),
+        }
+
+        if fmt in audio_codecs:
+            codec, extra = audio_codecs[fmt]
+            log(f"Conversion audio vers {fmt.upper()} ({codec})...")
+            opts['postprocessors'] = [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': fmt,
+            }]
+            opts['postprocessor_args'] = {
+                'FFmpegVideoConvertor': ['-acodec', codec] + extra.split(),
+            }
+        else:
+            opts['postprocessors'] = [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': fmt,
+                'preferredquality': str(q_val) if q_val > 0 else '192',
+            }]
+            log(f"Conversion audio vers {fmt.upper()} via FFmpegExtractAudio...")
+
+    def _configure_video(self, opts: dict, fmt: str, q_val: int, has_ffmpeg: bool) -> None:
+        height_filter = f'[height<={q_val}]' if q_val > 0 else ''
+
+        if not has_ffmpeg:
+            log("FFmpeg manquant: pas de fusion possible.")
+            opts['format'] = f'best{height_filter}/best'
+            return
+
+        opts['merge_output_format'] = fmt
+        opts['format'] = (
+            f'bestvideo{height_filter}+bestaudio/best{height_filter}/best'
+        )
+        log(f"Format video: {fmt.upper()} (merge via FFmpeg)")
+
     def _download_pytube(
         self,
         url: str,
@@ -325,15 +405,22 @@ class DownloadManager:
         progress_callback: Callable[[float, Optional[str]], None],
     ) -> None:
         ffmpeg_bin = get_ffmpeg_path()
+        last_progress = [0.0]
+        last_time = [time.time()]
 
         def pytube_progress(stream, chunk, bytes_remaining) -> None:
             if self.is_cancelled:
                 raise Exception("Annule par l'utilisateur.")
             total_size = stream.filesize
             bytes_downloaded = total_size - bytes_remaining
-            pct = bytes_downloaded / total_size
-            speed_str = self._estimate_pytube_speed(bytes_downloaded, total_size)
-            progress_callback(pct, f"{int(pct * 100)}% | {speed_str}")
+            pct = bytes_downloaded / total_size if total_size > 0 else 0
+            now = time.time()
+            elapsed = now - last_time[0]
+            if elapsed > 0.5:
+                speed = (bytes_downloaded - last_progress[0] * total_size) / elapsed
+                progress_callback(pct, f"{int(pct * 100)}% | {_format_speed(speed)}")
+                last_progress[0] = pct
+                last_time[0] = now
 
         yt = YouTube(url, on_progress_callback=pytube_progress)
         q_val = _parse_quality(quality)
@@ -344,75 +431,69 @@ class DownloadManager:
         else:
             log("pytubefix: Telechargement Video...")
             streams = yt.streams.filter(progressive=True, file_extension='mp4')
-
             if q_val > 0:
                 matching = [s for s in streams if s.resolution and s.resolution.replace('p', '') == str(q_val)]
                 if matching:
                     stream = matching[0]
-                    log(f"pytubefix: Flux {q_val}p trouve.")
                 else:
-                    available = sorted(
-                        [s for s in streams if s.resolution],
-                        key=lambda s: int(s.resolution.replace('p', '0') or '0'),
-                    )
-                    if available:
-                        best_under = max(available, key=lambda s: int(s.resolution.replace('p', '0') or '0'))
-                        stream = best_under
-                        log(f"pytubefix: {q_val}p indisponible, utilisation de {best_under.resolution}.")
-                    else:
-                        stream = streams.order_by('resolution').desc().first()
+                    available = [s for s in streams if s.resolution]
+                    available.sort(key=lambda s: int(s.resolution.replace('p', '0') or '0'))
+                    stream = available[-1] if available else streams.order_by('resolution').desc().first()
             else:
                 stream = streams.order_by('resolution').desc().first()
 
         if stream is None:
             raise Exception("Aucun flux correspondant trouve.")
 
-        log(f"pytubefix: Flux selectionne: {getattr(stream, 'resolution', 'N/A')} / {getattr(stream, 'abr', 'N/A')}")
+        log(f"pytubefix: Flux: {getattr(stream, 'resolution', 'N/A')} / {getattr(stream, 'abr', 'N/A')}")
 
         downloaded_file = stream.download(output_path=path)
-
         current_ext = os.path.splitext(downloaded_file)[1].replace(".", "")
+
         if ffmpeg_bin and current_ext != fmt:
-            progress_callback(1.0, "Conversion (Secours)...")
-            log(f"Conversion de {current_ext} en {fmt}...")
+            self._convert_file(ffmpeg_bin, downloaded_file, fmt, mode, q_val)
 
-            base_path = os.path.splitext(downloaded_file)[0]
-            final_file = f"{base_path}.{fmt}"
+    def _convert_file(
+        self, ffmpeg_bin: str, input_file: str, fmt: str, mode: str, q_val: int
+    ) -> None:
+        progress_cb = None
+        base_path = os.path.splitext(input_file)[0]
+        output_file = f"{base_path}.{fmt}"
 
-            if os.path.exists(final_file):
-                try:
-                    os.remove(final_file)
-                except OSError:
-                    pass
+        log(f"Conversion vers {fmt.upper()}...")
+        progress_cb_label = lambda: None
 
+        cmd = [ffmpeg_bin, "-y", "-i", input_file]
+
+        if mode == "Audio":
+            cmd += ["-vn"]
+            if q_val > 0:
+                cmd += ["-b:a", f"{q_val}k"]
+        else:
+            cmd += ["-c", "copy"]
+
+        cmd.append(output_file)
+
+        creation_flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        try:
+            subprocess.check_call(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=creation_flags,
+            )
             try:
-                cmd = [ffmpeg_bin, "-y", "-i", downloaded_file]
-                if mode == "Audio":
-                    cmd += ["-vn", "-ab", f"{q_val}k" if q_val > 0 else "192k"]
-                cmd.append(final_file)
+                os.remove(input_file)
+            except OSError:
+                pass
+            log(f"Conversion reussie: {fmt} cree.")
+        except subprocess.CalledProcessError as e:
+            log(f"Erreur conversion FFmpeg: {e}")
 
-                creation_flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-                subprocess.check_call(
-                    cmd,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=creation_flags,
-                )
 
-                try:
-                    os.remove(downloaded_file)
-                except OSError:
-                    pass
-                log(f"Conversion reussie: {fmt} cree.")
-            except subprocess.CalledProcessError as e:
-                log(f"Erreur conversion: {e}")
-
-    @staticmethod
-    def _estimate_pytube_speed(bytes_downloaded: int, total_size: int) -> str:
-        """Formate la vitesse approximative depuis pytube."""
-        if total_size == 0:
-            return "..."
-        kb = bytes_downloaded / 1024
-        if kb > 1024:
-            return f"{kb / 1024:.1f} Mo"
-        return f"{kb:.0f} Ko"
+def _format_speed(bytes_per_sec: float) -> str:
+    if bytes_per_sec > 1024 * 1024:
+        return f"{bytes_per_sec / (1024 * 1024):.1f} Mo/s"
+    elif bytes_per_sec > 1024:
+        return f"{bytes_per_sec / 1024:.0f} Ko/s"
+    return "..."

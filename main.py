@@ -1,6 +1,7 @@
 import sys
 import subprocess
 import os
+import threading
 import urllib.request
 import tempfile
 from typing import Optional
@@ -37,7 +38,10 @@ def is_newer(remote_ver: str, local_ver: str) -> bool:
     try:
         r_parts = [int(x) for x in remote_ver.split('.')]
         l_parts = [int(x) for x in local_ver.split('.')]
-        return r_parts > l_parts
+        max_len = max(len(r_parts), len(l_parts))
+        r_parts.extend([0] * (max_len - len(r_parts)))
+        l_parts.extend([0] * (max_len - len(l_parts)))
+        return tuple(r_parts) > tuple(l_parts)
     except (ValueError, AttributeError):
         return False
 
@@ -122,9 +126,16 @@ def update_application() -> None:
 
         if is_newer(remote_version, local_version):
             print("Nouvelle version superieure detectee ! Telechargement...")
-            subprocess.check_output(["git", "pull"], stderr=subprocess.STDOUT)
-            print("Mise a jour effectuee avec succes.")
-            print("Relancez le logiciel pour appliquer.")
+            result = subprocess.run(
+                ["git", "pull", "--ff-only"],
+                capture_output=True, text=True,
+            )
+            if result.returncode != 0:
+                print(f"Echec de la mise a jour: {result.stderr.strip()}")
+                print("Veuillez mettre a jour manuellement: git pull")
+            else:
+                print("Mise a jour effectuee avec succes.")
+                print("Relancez le logiciel pour appliquer.")
         elif remote_version == local_version:
             print("Logiciel a jour.")
         else:
@@ -150,11 +161,20 @@ def install_requirements() -> None:
             print("Installation terminee.")
         except Exception as e:
             print(f"Echec de l'installation: {e}")
-            input("Appuyez sur Entree pour quitter...")
+            if sys.stdin.isatty():
+                input("Appuyez sur Entree pour quitter...")
             sys.exit(1)
 
 
+def _thread_excepthook(args) -> None:
+    import traceback
+    print(f"[Thread error] {args.thread.name}: {args.exception}")
+    traceback.print_exception(args.exc_type, args.exc_value, args.exc_traceback)
+
+
 if __name__ == "__main__":
+    threading.excepthook = _thread_excepthook
+
     if not getattr(sys, "frozen", False):
         update_application()
         install_requirements()
@@ -167,4 +187,5 @@ if __name__ == "__main__":
         print(f"ERREUR CRITIQUE: {e}")
         import traceback
         traceback.print_exc()
-        input("Appuyez sur Entree pour fermer...")
+        if sys.stdin.isatty():
+            input("Appuyez sur Entree pour fermer...")

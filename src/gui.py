@@ -34,7 +34,6 @@ class YouTubeDownloaderApp(ctk.CTk):
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # State
         self.download_path = tk.StringVar(value=_DEFAULT_DOWNLOAD_DIR)
         self.url_var = tk.StringVar()
         self.format_mode = tk.StringVar(value="Vidéo")
@@ -42,18 +41,13 @@ class YouTubeDownloaderApp(ctk.CTk):
         self.quality_var = tk.StringVar(value="1080p")
 
         self.manager = DownloadManager()
+        self._downloading = False
+        self._btn_default_fg = None
 
         self.setup_ui()
 
         logger.set_widget(self.log_textbox)
         log("GUI initialise.")
-
-        self.check_env()
-
-    def check_env(self) -> None:
-        if not getattr(sys, 'frozen', False):
-            if sys.prefix == sys.base_prefix:
-                log("ATTENTION: Execution hors venv.")
 
     # ------------------------------------------------------------------
     # UI
@@ -66,7 +60,6 @@ class YouTubeDownloaderApp(ctk.CTk):
             self.sidebar, text=APP_NAME, font=ctk.CTkFont(size=20, weight="bold")
         ).grid(row=0, column=0, padx=20, pady=(20, 10))
 
-        # MODE
         ctk.CTkLabel(self.sidebar, text="Type de contenu :", anchor="w").grid(
             row=1, column=0, padx=20, pady=(10, 0)
         )
@@ -76,14 +69,12 @@ class YouTubeDownloaderApp(ctk.CTk):
         self.mode_option.grid(row=2, column=0, padx=20, pady=(5, 10))
         self.mode_option.set("Vidéo")
 
-        # FORMAT
         ctk.CTkLabel(self.sidebar, text="Format :", anchor="w").grid(
             row=3, column=0, padx=20, pady=(10, 0)
         )
         self.format_menu = ctk.CTkComboBox(self.sidebar, variable=self.format_var)
         self.format_menu.grid(row=4, column=0, padx=20, pady=(0, 10))
 
-        # QUALITE
         ctk.CTkLabel(self.sidebar, text="Qualite :", anchor="w").grid(
             row=5, column=0, padx=20, pady=(10, 0)
         )
@@ -92,18 +83,16 @@ class YouTubeDownloaderApp(ctk.CTk):
 
         self.update_options("Vidéo")
 
-        # Zone principale
         self.main = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         self.main.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
         self.main.grid_columnconfigure(0, weight=1)
 
-        # URL
         ctk.CTkLabel(self.main, text="YouTube URL:").grid(row=0, column=0, sticky="w")
-        ctk.CTkEntry(
+        self.url_entry = ctk.CTkEntry(
             self.main, textvariable=self.url_var, placeholder_text="Collez le lien ici..."
-        ).grid(row=1, column=0, sticky="ew", pady=(0, 20))
+        )
+        self.url_entry.grid(row=1, column=0, sticky="ew", pady=(0, 20))
 
-        # Chemin
         path_frame = ctk.CTkFrame(self.main, fg_color="transparent")
         path_frame.grid(row=2, column=0, sticky="ew", pady=(0, 20))
         path_frame.grid_columnconfigure(0, weight=1)
@@ -114,7 +103,6 @@ class YouTubeDownloaderApp(ctk.CTk):
             path_frame, text="Browse", command=self.browse, width=100
         ).grid(row=0, column=1)
 
-        # Bouton telechargement / annulation
         self.btn = ctk.CTkButton(
             self.main,
             text="TELECHARGER",
@@ -123,8 +111,8 @@ class YouTubeDownloaderApp(ctk.CTk):
             font=ctk.CTkFont(size=16, weight="bold"),
         )
         self.btn.grid(row=3, column=0, sticky="ew", pady=10)
+        self._btn_default_fg = self.btn.cget("fg_color")
 
-        # Progression
         self.progress = ctk.CTkProgressBar(self.main)
         self.progress.grid(row=4, column=0, sticky="ew", pady=10)
         self.progress.set(0)
@@ -132,7 +120,6 @@ class YouTubeDownloaderApp(ctk.CTk):
         self.pct_label = ctk.CTkLabel(self.main, text="0%")
         self.pct_label.grid(row=5, column=0, sticky="e")
 
-        # Logs
         ctk.CTkLabel(self.main, text="Logs:").grid(row=6, column=0, sticky="w")
         self.log_textbox = ctk.CTkTextbox(self.main, height=200, font=("Consolas", 12))
         self.log_textbox.grid(row=7, column=0, sticky="nsew")
@@ -140,9 +127,20 @@ class YouTubeDownloaderApp(ctk.CTk):
 
         self.main.grid_rowconfigure(7, weight=1)
 
+        self.bind("<Return>", lambda e: self.start_thread())
+        self.bind("<Control-v>", lambda e: self._paste_url())
+
+    def _paste_url(self) -> None:
+        try:
+            text = self.clipboard_get()
+            if text:
+                self.url_var.set(text.strip())
+        except tk.TclError:
+            pass
+
     def update_options(self, value: str) -> None:
         if value == "Vidéo":
-            formats = ["mp4", "mkv", "webm"]
+            formats = ["mp4", "mkv"]
             qualities = ["2160p (4K)", "1440p", "1080p", "720p", "480p", "360p", "240p", "144p"]
             self.format_var.set("mp4")
             self.quality_var.set("1080p")
@@ -168,6 +166,9 @@ class YouTubeDownloaderApp(ctk.CTk):
         return bool(_YT_URL_RE.match(url))
 
     def start_thread(self) -> None:
+        if self._downloading:
+            return
+
         url = self.url_var.get().strip()
         if not url:
             log("Erreur: URL vide")
@@ -176,47 +177,87 @@ class YouTubeDownloaderApp(ctk.CTk):
             log("Erreur: Ce lien ne semble pas etre une URL YouTube valide.")
             return
 
-        self._set_downloading_ui(True)
-        threading.Thread(target=self.run_process, args=(url,), daemon=True).start()
+        self._downloading = True
+        self._set_ui_downloading(True)
+        threading.Thread(target=self._run_download, args=(url,), daemon=True).start()
 
     def cancel_download(self) -> None:
         log("Annulation en cours...")
         self.manager.cancel()
 
-    def _set_downloading_ui(self, downloading: bool) -> None:
-        if downloading:
-            self.btn.configure(text="ANNULER", fg_color="#c0392b",
-                               command=self.cancel_download, state="normal")
-            self.progress.set(0)
-            self.pct_label.configure(text="0%")
-        else:
-            self.btn.configure(text="TELECHARGER", fg_color=None,
-                               command=self.start_thread, state="normal")
+    def _set_ui_downloading(self, downloading: bool) -> None:
+        try:
+            if downloading:
+                self.btn.configure(
+                    text="ANNULER", fg_color="#c0392b",
+                    hover_color="#a93226",
+                    command=self.cancel_download,
+                )
+                self.progress.set(0)
+                self.pct_label.configure(text="0%")
+                self.mode_option.configure(state="disabled")
+                self.format_menu.configure(state="disabled")
+                self.quality_menu.configure(state="disabled")
+                self.url_entry.configure(state="disabled")
+            else:
+                self.btn.configure(
+                    text="TELECHARGER",
+                    fg_color=self._btn_default_fg,
+                    hover_color=("gray70", "gray30"),
+                    command=self.start_thread,
+                )
+                self.mode_option.configure(state="normal")
+                self.format_menu.configure(state="normal")
+                self.quality_menu.configure(state="normal")
+                self.url_entry.configure(state="normal")
+        except Exception as e:
+            sys.__stderr__.write(f"[GUI] Erreur UI: {e}\n")
 
-    def run_process(self, url: str) -> None:
+    def _update_progress(self, val: float, msg: Optional[str] = None) -> None:
+        self.progress.set(val)
+        if msg:
+            self.pct_label.configure(text=msg)
+        else:
+            self.pct_label.configure(text=f"{int(val * 100)}%")
+
+    def _reset_button(self) -> None:
+        self._downloading = False
+        try:
+            self._set_ui_downloading(False)
+        except Exception:
+            pass
+
+    def _run_download(self, url: str) -> None:
         path = self.download_path.get()
         mode = self.mode_option.get()
         qual = self.quality_var.get()
         fmt = self.format_var.get()
 
         def update_prog(val: float, msg: Optional[str] = None) -> None:
-            self.progress.set(val)
-            if msg:
-                self.pct_label.configure(text=msg)
+            self.after(0, self._update_progress, val, msg)
+
+        res = False
+        try:
+            res = self.manager.start_download(url, path, mode, qual, fmt, update_prog)
+        except Exception as e:
+            log(f"Erreur inattendue: {e}")
+            res = False
+
+        self.after(0, self._on_download_done, res)
+
+    def _on_download_done(self, res: bool) -> None:
+        try:
+            if self.manager.is_cancelled:
+                log("Telechargement annule.")
+                self.progress.set(0)
+                self.pct_label.configure(text="0%")
+            elif res:
+                log("Termine avec succes!")
+                self.progress.set(1)
+                self.pct_label.configure(text="100%")
             else:
-                self.pct_label.configure(text=f"{int(val * 100)}%")
+                log("Telechargement ECHEC.")
+        except Exception:
+            pass
 
-        res = self.manager.start_download(url, path, mode, qual, fmt, update_prog)
-
-        if self.manager.is_cancelled:
-            log("Telechargement annule.")
-            self.progress.set(0)
-            self.pct_label.configure(text="0%")
-        elif res:
-            log("Termine avec succes!")
-            self.progress.set(1)
-            self.pct_label.configure(text="100%")
-        else:
-            log("Telechargement ECHEC.")
-
-        self._set_downloading_ui(False)
+        self._reset_button()

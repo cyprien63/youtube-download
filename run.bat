@@ -34,23 +34,25 @@ powershell -Command "Invoke-WebRequest -Uri '%INSTALLER_URL%' -OutFile '%INSTALL
 IF ERRORLEVEL 1 GOTO INSTALL_ERROR
 
 ECHO [Launcher] Installation en cours (cela peut prendre une minute)...
-REM InstallAllUsers=0 (Current User), PrependPath=1 (Add to PATH), Include_test=0 (No tests)
 "%INSTALLER_FILE%" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0
+IF ERRORLEVEL 1 GOTO INSTALL_ERROR
 
 REM Cleanup
-del "%INSTALLER_FILE%"
+del "%INSTALLER_FILE%" 2>nul
+
+GOTO POST_INSTALL
+
+:INSTALL_ERROR
+ECHO [ERREUR] Impossible d'installer Python automatiquement.
+ECHO [ACTION] Installez Python manuellement : https://www.python.org/downloads/
+PAUSE
+EXIT /B 1
 
 :POST_INSTALL
 ECHO.
 ECHO [INFO] Installation terminee.
 TIMEOUT /T 3 >nul
 GOTO DETECT_PYTHON
-
-:INSTALL_ERROR
-ECHO [ERREUR] Impossible d'installer Python automatiquement.
-ECHO [ACTION] Installez Python manuellement : https://www.python.org/downloads/
-PAUSE
-EXIT /B
 
 :DETECT_PYTHON
 REM 2. SELECTION DE L'EXECUTABLE PYTHON
@@ -78,7 +80,7 @@ ECHO [ERREUR] Python introuvable.
 ECHO [ACTION] Redemarrez l'ordinateur si vous venez de l'installer.
 ECHO ================================================================
 PAUSE
-EXIT /B
+EXIT /B 1
 
 :SETUP_VENV
 REM 3. GESTION DU VENV ET LANCEMENT
@@ -91,14 +93,22 @@ ECHO [Launcher] Creation de l'environnement virtuel (.venv)...
 IF ERRORLEVEL 1 (
     ECHO [ERREUR] Echec de la creation du venv.
     PAUSE
-    EXIT /B
+    EXIT /B 1
 )
 
 ECHO [Launcher] Installation des dependances...
 ".venv\Scripts\pip.exe" install -r requirements.txt
+IF ERRORLEVEL 1 (
+    ECHO [ERREUR] Echec de l'installation des dependances.
+    PAUSE
+    EXIT /B 1
+)
 
 :LAUNCH_APP
 ECHO [Launcher] Lancement de l'application...
 ".venv\Scripts\python.exe" main.py
-
+IF ERRORLEVEL 1 (
+    ECHO.
+    ECHO [Launcher] L'application s'est terminee avec une erreur.
+)
 PAUSE
