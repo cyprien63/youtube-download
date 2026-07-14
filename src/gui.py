@@ -1,3 +1,4 @@
+import json
 import re
 import os
 import sys
@@ -23,10 +24,34 @@ _YT_URL_RE = re.compile(
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
 _DEFAULT_DOWNLOAD_DIR = os.path.join(_PROJECT_ROOT, "Downloads_YT")
+_SETTINGS_FILE = os.path.join(_PROJECT_ROOT, ".settings")
+
+
+def _load_settings() -> dict:
+    if os.path.isfile(_SETTINGS_FILE):
+        try:
+            with open(_SETTINGS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _save_settings(data: dict) -> None:
+    try:
+        with open(_SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
 
 
 class YouTubeDownloaderApp(ctk.CTk):
     def __init__(self) -> None:
+        self._settings = _load_settings()
+
+        saved_mode = self._settings.get("theme", "dark")
+        ctk.set_appearance_mode(saved_mode)
+
         super().__init__()
         self.title(f"{APP_NAME} v{VERSION}")
         self.geometry("900x700")
@@ -42,7 +67,7 @@ class YouTubeDownloaderApp(ctk.CTk):
 
         self.manager = DownloadManager()
         self._downloading = False
-        self._btn_default_fg = None
+        self._dark_mode = (saved_mode == "dark")
 
         self.setup_ui()
 
@@ -83,6 +108,12 @@ class YouTubeDownloaderApp(ctk.CTk):
 
         self.update_options("Vidéo")
 
+        theme_label = "Mode: Sombre" if self._dark_mode else "Mode: Claire"
+        self.theme_button = ctk.CTkButton(
+            self.sidebar, text=theme_label, command=self.toggle_theme, width=160
+        )
+        self.theme_button.grid(row=7, column=0, padx=20, pady=(10, 20))
+
         self.main = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         self.main.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
         self.main.grid_columnconfigure(0, weight=1)
@@ -111,7 +142,6 @@ class YouTubeDownloaderApp(ctk.CTk):
             font=ctk.CTkFont(size=16, weight="bold"),
         )
         self.btn.grid(row=3, column=0, sticky="ew", pady=10)
-        self._btn_default_fg = self.btn.cget("fg_color")
 
         self.progress = ctk.CTkProgressBar(self.main)
         self.progress.grid(row=4, column=0, sticky="ew", pady=10)
@@ -137,6 +167,17 @@ class YouTubeDownloaderApp(ctk.CTk):
                 self.url_var.set(text.strip())
         except tk.TclError:
             pass
+
+    def toggle_theme(self) -> None:
+        self._dark_mode = not self._dark_mode
+        mode = "dark" if self._dark_mode else "light"
+        label = "Mode: Sombre" if self._dark_mode else "Mode: Claire"
+
+        ctk.set_appearance_mode(mode)
+        self.theme_button.configure(text=label)
+
+        self._settings["theme"] = mode
+        _save_settings(self._settings)
 
     def update_options(self, value: str) -> None:
         if value == "Vidéo":
@@ -186,32 +227,31 @@ class YouTubeDownloaderApp(ctk.CTk):
         self.manager.cancel()
 
     def _set_ui_downloading(self, downloading: bool) -> None:
-        try:
-            if downloading:
-                self.btn.configure(
-                    text="ANNULER", fg_color="#c0392b",
-                    hover_color="#a93226",
-                    command=self.cancel_download,
-                )
-                self.progress.set(0)
-                self.pct_label.configure(text="0%")
-                self.mode_option.configure(state="disabled")
-                self.format_menu.configure(state="disabled")
-                self.quality_menu.configure(state="disabled")
-                self.url_entry.configure(state="disabled")
-            else:
-                self.btn.configure(
-                    text="TELECHARGER",
-                    fg_color=self._btn_default_fg,
-                    hover_color=("gray70", "gray30"),
-                    command=self.start_thread,
-                )
-                self.mode_option.configure(state="normal")
-                self.format_menu.configure(state="normal")
-                self.quality_menu.configure(state="normal")
-                self.url_entry.configure(state="normal")
-        except Exception as e:
-            sys.__stderr__.write(f"[GUI] Erreur UI: {e}\n")
+        if downloading:
+            self.btn.configure(
+                text="ANNULER", fg_color="#c0392b",
+                hover_color="#a93226",
+                command=self.cancel_download,
+            )
+            self.progress.set(0)
+            self.pct_label.configure(text="0%")
+            self.mode_option.configure(state="disabled")
+            self.format_menu.configure(state="disabled")
+            self.quality_menu.configure(state="disabled")
+            self.url_entry.configure(state="disabled")
+        else:
+            default_fg = ctk.ThemeManager.theme["CTkButton"]["fg_color"]
+            default_hover = ctk.ThemeManager.theme["CTkButton"]["hover_color"]
+            self.btn.configure(
+                text="TELECHARGER",
+                fg_color=default_fg,
+                hover_color=default_hover,
+                command=self.start_thread,
+            )
+            self.mode_option.configure(state="normal")
+            self.format_menu.configure(state="normal")
+            self.quality_menu.configure(state="normal")
+            self.url_entry.configure(state="normal")
 
     def _update_progress(self, val: float, msg: Optional[str] = None) -> None:
         self.progress.set(val)
@@ -222,10 +262,7 @@ class YouTubeDownloaderApp(ctk.CTk):
 
     def _reset_button(self) -> None:
         self._downloading = False
-        try:
-            self._set_ui_downloading(False)
-        except Exception:
-            pass
+        self._set_ui_downloading(False)
 
     def _run_download(self, url: str) -> None:
         path = self.download_path.get()
@@ -246,18 +283,15 @@ class YouTubeDownloaderApp(ctk.CTk):
         self.after(0, self._on_download_done, res)
 
     def _on_download_done(self, res: bool) -> None:
-        try:
-            if self.manager.is_cancelled:
-                log("Telechargement annule.")
-                self.progress.set(0)
-                self.pct_label.configure(text="0%")
-            elif res:
-                log("Termine avec succes!")
-                self.progress.set(1)
-                self.pct_label.configure(text="100%")
-            else:
-                log("Telechargement ECHEC.")
-        except Exception:
-            pass
+        if self.manager.is_cancelled:
+            log("Telechargement annule.")
+            self.progress.set(0)
+            self.pct_label.configure(text="0%")
+        elif res:
+            log("Termine avec succes!")
+            self.progress.set(1)
+            self.pct_label.configure(text="100%")
+        else:
+            log("Telechargement ECHEC.")
 
         self._reset_button()

@@ -133,6 +133,14 @@ def _normalize_shorts_url(url: str) -> str:
     return url
 
 
+def _format_speed(bytes_per_sec: float) -> str:
+    if bytes_per_sec > 1024 * 1024:
+        return f"{bytes_per_sec / (1024 * 1024):.1f} Mo/s"
+    elif bytes_per_sec > 1024:
+        return f"{bytes_per_sec / 1024:.0f} Ko/s"
+    return "..."
+
+
 class DownloadManager:
 
     def __init__(self) -> None:
@@ -249,10 +257,12 @@ class DownloadManager:
                 self._ydl_instance.download([url])
                 self._ydl_instance = None
 
-                if has_ffmpeg and mode == "Video":
-                    post_files = set(glob.glob(os.path.join(path, '*')))
-                    new_files = [f for f in (post_files - pre_files) if os.path.isfile(f)]
-                    self._remux_to_format(new_files, fmt, ffmpeg_bin, progress_callback)
+                if has_ffmpeg and mode == "Vidéo" and fmt != "mp4":
+                    mp4_file = self._find_latest_mp4(path, pre_files)
+                    if mp4_file:
+                        self._convert_single_video(ffmpeg_bin, mp4_file, fmt, progress_callback)
+                    else:
+                        log("Aucun fichier MP4 trouve pour la conversion.")
 
                 return True
             except yt_dlp.utils.DownloadError as e:
@@ -272,39 +282,21 @@ class DownloadManager:
 
         return False
 
-    def _remux_to_format(
-        self,
-        downloaded_files: list[str],
-        target_fmt: str,
-        ffmpeg_bin: str,
-        progress_callback: Callable,
-    ) -> None:
-        for filepath in downloaded_files:
-            if self.is_cancelled:
-                return
-            if not os.path.isfile(filepath):
+    def _find_latest_mp4(self, path: str, exclude_files: set) -> Optional[str]:
+        latest_file = None
+        latest_mtime = -1.0
+        for entry in os.scandir(path):
+            if not entry.is_file():
                 continue
-            current_ext = os.path.splitext(filepath)[1].lstrip('.').lower()
-            if current_ext == target_fmt:
+            if entry.path in exclude_files:
                 continue
-
-            base_path = os.path.splitext(filepath)[0]
-            output_file = f"{base_path}.{target_fmt}"
-
-            log(f"Remux {current_ext.upper()} -> {target_fmt.upper()}...")
-
-            cmd = [ffmpeg_bin, "-y", "-i", filepath, "-c", "copy", output_file]
-
-            creation_flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-            try:
-                subprocess.check_call(
-                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    creationflags=creation_flags,
-                )
-                os.remove(filepath)
-                log(f"Remux reussi: {os.path.basename(output_file)}")
-            except subprocess.CalledProcessError as e:
-                log(f"Erreur remux FFmpeg: {e}")
+            ext = os.path.splitext(entry.name)[1].lstrip('.').lower()
+            if ext == 'mp4':
+                mtime = entry.stat().st_mtime
+                if mtime > latest_mtime:
+                    latest_mtime = mtime
+                    latest_file = entry.path
+        return latest_file
 
     def _build_opts(
         self, path: str, is_playlist_view: bool, progress_callback: Callable
@@ -389,11 +381,14 @@ class DownloadManager:
             opts['format'] = f'best{height_filter}/best'
             return
 
-        opts['merge_output_format'] = fmt
+        opts['merge_output_format'] = 'mp4'
         opts['format'] = (
             f'bestvideo{height_filter}+bestaudio/best{height_filter}/best'
         )
-        log(f"Format video: {fmt.upper()} (merge via FFmpeg)")
+        if fmt == 'mp4':
+            log(f"Format video: MP4 (merge via FFmpeg)")
+        else:
+            log(f"Format video: MP4 d'abord, conversion vers {fmt.upper()} apres telechargement")
 
     def _download_pytube(
         self,
@@ -451,27 +446,22 @@ class DownloadManager:
         current_ext = os.path.splitext(downloaded_file)[1].replace(".", "")
 
         if ffmpeg_bin and current_ext != fmt:
-            self._convert_file(ffmpeg_bin, downloaded_file, fmt, mode, q_val)
+            if mode == "Audio":
+                self._convert_audio_file(ffmpeg_bin, downloaded_file, fmt, q_val)
+            elif mode == "Vidéo" and fmt != "mp4":
+                self._convert_single_video(ffmpeg_bin, downloaded_file, fmt, progress_callback)
 
-    def _convert_file(
-        self, ffmpeg_bin: str, input_file: str, fmt: str, mode: str, q_val: int
+    def _convert_audio_file(
+        self, ffmpeg_bin: str, input_file: str, fmt: str, q_val: int
     ) -> None:
-        progress_cb = None
         base_path = os.path.splitext(input_file)[0]
         output_file = f"{base_path}.{fmt}"
 
-        log(f"Conversion vers {fmt.upper()}...")
-        progress_cb_label = lambda: None
+        log(f"Conversion audio vers {fmt.upper()}...")
 
-        cmd = [ffmpeg_bin, "-y", "-i", input_file]
-
-        if mode == "Audio":
-            cmd += ["-vn"]
-            if q_val > 0:
-                cmd += ["-b:a", f"{q_val}k"]
-        else:
-            cmd += ["-c", "copy"]
-
+        cmd = [ffmpeg_bin, "-y", "-i", input_file, "-vn"]
+        if q_val > 0:
+            cmd += ["-b:a", f"{q_val}k"]
         cmd.append(output_file)
 
         creation_flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
@@ -490,10 +480,32 @@ class DownloadManager:
         except subprocess.CalledProcessError as e:
             log(f"Erreur conversion FFmpeg: {e}")
 
+    def _convert_single_video(
+        self, ffmpeg_bin: str, input_file: str, target_fmt: str,
+        progress_callback: Optional[Callable] = None,
+    ) -> None:
+        base_path = os.path.splitext(input_file)[0]
+        output_file = f"{base_path}.{target_fmt}"
 
-def _format_speed(bytes_per_sec: float) -> str:
-    if bytes_per_sec > 1024 * 1024:
-        return f"{bytes_per_sec / (1024 * 1024):.1f} Mo/s"
-    elif bytes_per_sec > 1024:
-        return f"{bytes_per_sec / 1024:.0f} Ko/s"
-    return "..."
+        log(f"Conversion {os.path.basename(input_file)} -> {target_fmt.upper()}...")
+        if progress_callback:
+            progress_callback(1.0, f"Conversion vers {target_fmt.upper()}...")
+
+        cmd = [ffmpeg_bin, "-y", "-i", input_file, "-c", "copy", output_file]
+
+        creation_flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True,
+                creationflags=creation_flags,
+            )
+            if result.returncode != 0:
+                log(f"Erreur FFmpeg (code {result.returncode}): {result.stderr.strip()[-300:]}")
+                return
+            try:
+                os.remove(input_file)
+            except OSError:
+                pass
+            log(f"Conversion reussie: {os.path.basename(output_file)}")
+        except Exception as e:
+            log(f"Erreur conversion FFmpeg: {e}")

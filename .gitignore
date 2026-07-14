@@ -6,6 +6,7 @@ dist/
 *.spec
 Downloads_YT/
 .DS_Store
+.settings
 # VS Code
 .vscode/
 

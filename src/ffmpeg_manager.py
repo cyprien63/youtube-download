@@ -1,4 +1,5 @@
 import os
+import platform
 import shutil
 import zipfile
 import urllib.request
@@ -16,21 +17,28 @@ BIN_DIR: str = os.path.join(_PROJECT_ROOT, "bin")
 
 DOWNLOAD_TIMEOUT = 120
 
+_IS_WINDOWS = platform.system() == "Windows"
+
 
 def get_ffmpeg_path() -> Optional[str]:
-    """Retourne le chemin vers ffmpeg. Le telecharge si absent."""
+    """Retourne le chemin vers ffmpeg. Le telecharge si absent (Windows uniquement)."""
     if shutil.which("ffmpeg"):
         return "ffmpeg"
 
-    local_ffmpeg = os.path.join(BIN_DIR, "ffmpeg.exe")
-    if os.path.exists(local_ffmpeg):
-        return local_ffmpeg
+    if _IS_WINDOWS:
+        local_ffmpeg = os.path.join(BIN_DIR, "ffmpeg.exe")
+        if os.path.exists(local_ffmpeg):
+            return local_ffmpeg
+        return download_ffmpeg()
 
-    return download_ffmpeg()
+    return None
 
 
 def download_ffmpeg() -> Optional[str]:
-    """Telecharge un build statique de FFmpeg dans bin/."""
+    """Telecharge un build statique de FFmpeg dans bin/ (Windows uniquement)."""
+    if not _IS_WINDOWS:
+        return None
+
     log("FFmpeg introuvable. Telechargement en cours (cela peut prendre une minute)...")
     if not os.path.exists(BIN_DIR):
         try:
