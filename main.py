@@ -175,7 +175,7 @@ def update_application_dev() -> None:
         print(f"Erreur update: {e}")
 
 
-def check_frozen_update() -> None:
+def check_frozen_update(app=None) -> None:
     """Mode exe : verification via GitHub Releases + popup si nouvelle version."""
     local_version = _get_local_version()
     print(f"Verification des mises a jour... (v{local_version})")
@@ -201,10 +201,13 @@ def check_frozen_update() -> None:
 
     try:
         import customtkinter as ctk
-        _show_update_popup(ctk, remote_version, local_version, html_url, body)
+        if app is not None:
+            app.after(0, _show_update_popup, ctk, remote_version, local_version, html_url, body)
+        else:
+            _show_update_popup(ctk, remote_version, local_version, html_url, body)
     except Exception as e:
         print(f"Impossible d'afficher la popup: {e}")
-        print(f"Téléchargez manuellement: {html_url}")
+        print(f"Telechargez manuellement: {html_url}")
 
 
 def _show_update_popup(ctk, remote_ver: str, local_ver: str, url: str, notes: str) -> None:
@@ -291,18 +294,18 @@ def _log_to_file(msg: str) -> None:
 if __name__ == "__main__":
     threading.excepthook = _thread_excepthook
 
-    try:
-        if getattr(sys, "frozen", False):
-            check_frozen_update()
-        else:
+    if not getattr(sys, "frozen", False):
+        try:
             update_application_dev()
             install_requirements()
-    except Exception as e:
-        _log_to_file(f"ERREUR UPDATE: {e}")
+        except Exception as e:
+            _log_to_file(f"ERREUR UPDATE: {e}")
 
     try:
         from src.gui import YouTubeDownloaderApp
         app = YouTubeDownloaderApp()
+        if getattr(sys, "frozen", False):
+            threading.Thread(target=check_frozen_update, args=(app,), daemon=True).start()
         app.mainloop()
     except Exception as e:
         import traceback
