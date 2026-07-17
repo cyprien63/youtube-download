@@ -1,69 +1,123 @@
-# 📺 YouTube Downloader
+# YouTube Downloader
 
-**YouTube Downloader** est une application de bureau professionnelle conçue pour télécharger des vidéos et musiques YouTube avec une fiabilité maximale.
-
-Contrairement aux autres téléchargeurs qui cessent de fonctionner dès que YouTube change son code, ce logiciel utilise une **architecture à double moteur** (Hybrid Engine) et gère lui-même ses dépendances (comme FFmpeg).
+**YouTube Downloader** est une application de bureau professionnelle concue pour telecharger des videos et musiques YouTube avec une fiabilite maximale.
 
 ---
 
-## 🚀 Démarrage Rapide (Utilisateurs Windows)
+## Demarrage Rapide (Utilisateurs Windows)
 
 Vous n'avez besoin d'aucune connaissance technique.
 
-1. Téléchargez le dossier du projet.
-2. Double-cliquez sur le fichier :
-   👉 **`run.bat`**
+1. Telechargez le dossier du projet.
+2. Double-cliquez sur le fichier **`run.bat`**
 
 **C'est tout.** Le script va automatiquement :
 
-- Vérifier si Python est installé (et l'installer sinon).
-- Créer une zone isolée pour le logiciel.
-- Installer les bibliothèques nécessaires.
-- **Télécharger et configurer FFmpeg** automatiquement pour la conversion audio/vidéo.
+- Verifier si Python est installe (et l'installer sinon).
+- Creer un environnement isole (.venv).
+- Installer les bibliotheques necessaires.
+- Telecharger et configurer FFmpeg automatiquement.
 - Lancer l'interface.
 
 ---
 
-## ✨ Fonctionnalités Clés
+## Fonctionnalites
 
-- **⚡ Haute Vitesse** : Téléchargement multi-segmenté.
-- **🛡️ Robustesse** : Moteur hybride `yt-dlp` (principal) + `pytubefix` (secours).
-- **📺 Qualité Maximale** : Support natif 4K/8K, 1440p, 1080p (fusion audio/vidéo automatique).
-- **🎵 Audio Avancé** : Conversion automatique en **MP3, M4A, WAV, OPUS, WMA**.
-- **👁️ Interface Claire** : Indicateur visuel "Conversion/Fusion..." pour ne jamais penser que l'app est plantée.
-- **🔧 Auto-Configuration** : Plus besoin d'installer FFmpeg manuellement, le logiciel s'en occupe.
-
----
-
-## 🧠 Architecture Technique
-
-### 1. Lanceur Intelligent (`run.bat`)
-
-Script d'amorçage qui garantit un environnement sain (Python 3.10+, venv propre) avant de lancer l'application.
-
-### 2. Gestionnaire de Dépendances (`ffmpeg_manager.py`)
-
-Nouveauté majeure : au premier lancement, ce module détecte l'absence de FFmpeg et télécharge une version statique portable dans un dossier `bin/` local. Cela garantit que la conversion format (ex: mp4 -> mp3) fonctionne sur 100% des machines sans configuration.
-
-### 3. Moteur Logiciel (`downloader.py`)
-
-- Utilise `yt-dlp` avec des paramètres optimisés.
-- Détecte les étapes de conversion et renvoie des feedbacks précis à l'interface ("Conversion en cours...").
-- Mode fallback sur `pytubefix` si l'API principale est bloquée.
-
-### 4. Interface (`gui.py`)
-
-Interface sombre et réactive basée sur `customtkinter`. Elle reste fluide (multi-thread) même pendant les gros téléchargements.
+| Fonctionnalite | Description |
+|---|---|
+| **Haute Vitesse** | Telechargement multi-segmente (10 fragments simultanes) |
+| **Moteur Hybride** | `yt-dlp` (principal) + `pytubefix` (secours) avec 3 strategies de connexion |
+| **Qualite Maximale** | Support natif 4K/8K, fusion audio/vidéo automatique |
+| **Audio Avancé** | Conversion en MP3, M4A, WAV, OPUS, WMA avec controle du bitrate |
+| **Metadonnees Integrees** | Les fichiers audio contiennent automatiquement l'image de couverture, le titre, l'artiste et les metadonnees YouTube |
+| **Apercu Avant Telechargement** | Collez un lien et voyez le titre, la miniature et la chaine avant de telecharger. Cliquez sur l'image pour l'agrandir |
+| **Mise a Jour Auto** | En mode Python : mise a jour via `git pull`. En mode EXE : popup avec lien de telechargement |
+| **Multi-Format** | Vidéo : MP4, MKV. Audio : MP3, M4A, OPUS, WAV, WMA |
+| **Compilation** | Executable Windows (EXE) et AppImage Linux disponibles |
+| **FFmpeg Auto** | Telechargement et configuration automatiques de FFmpeg |
 
 ---
 
-## ❓ FAQ
+## Compilation
 
-**Q: Le téléchargement semble bloqué à 100% ?**
-R: Regardez la barre de texte. Si elle indique "Conversion/Fusion...", c'est normal ! Le logiciel est en train de transformer le fichier brut (ex: webm) en fichier fini (ex: mp3). Cela peut prendre 10 à 60 secondes selon la puissance de votre PC.
+Lancez **`compil.bat`** pour acceder au menu de compilation.
 
-**Q: J'ai un message "FFmpeg not found. Downloading..." ?**
-R: C'est normal lors de la toute première utilisation. Le logiciel récupère les outils nécessaires. Cela ne se produira qu'une fois.
+| Option | Description |
+|---|---|
+| `[1] EXE Windows` | Compile un executable Windows (multi-fichiers, sans terminal, avec icone) via PyInstaller |
+| `[2] AppImage Linux` | Compile une AppImage Linux (a executer sur une machine Linux) |
+
+### Resultats
+
+- **EXE** : `dist/YouTube-Downloader/YouTube-Downloader.exe`
+- **AppImage** : `YouTube-Downloader-{version}-x86_64.AppImage`
+
+---
+
+## Architecture Technique
+
+### Lanceur (`run.bat`)
+
+Script d'amorcage qui detecte Python (py launcher, python, chemins connus), cree le venv et lance l'application.
+
+### Moteur de Telechargement (`downloader.py`)
+
+- Utilise `yt-dlp` avec 3 strategies de connexion (android+web, ios, web) et retry automatique.
+- Fallback sur `pytubefix` si toutes les strategies echouent.
+- Post-processeurs : conversion de format, integration des metadonnees (FFmpegMetadata), integration de la couverture (EmbedThumbnail).
+
+### Gestionnaire FFmpeg (`ffmpeg_manager.py`)
+
+Telecharge automatiquement les binaires FFmpeg (ffmpeg.exe + ffprobe.exe) dans le dossier `bin/` au premier lancement.
+
+### Interface (`gui.py`)
+
+Interface sombre et reactive basee sur `customtkinter` avec :
+
+- Apercu automatique du contenu (titre + miniature) au collage du lien.
+- Barre de progression et logs en temps reel.
+- Selection de format et qualite.
+- Changement de theme (sombre/claire).
+
+### Systeme de Mise a Jour (`main.py`)
+
+| Mode | Comportement |
+|---|---|
+| **Python** (dev) | Verification de version via GitHub + `git pull` automatique |
+| **EXE / AppImage** | Verification via GitHub Releases API + popup avec lien de telechargement |
+
+### Compilation (`scripts/`)
+
+- `build_exe.bat` : Script de compilation Windows via PyInstaller (onedir, windowed).
+- `build_appimage.sh` : Script de compilation Linux via PyInstaller + appimage-builder.
+- `generate_icon.py` : Generateur d'icone (cercle rouge avec triangle blanc).
+- `appimage-builder.yml` : Recette AppImage.
+
+---
+
+## Dependances
+
+- `customtkinter` - Interface graphique moderne
+- `yt-dlp` - Moteur de telechargement principal
+- `pytubefix` - Moteur de telechargement de secours
+- `pillow` - Gestion des images (miniature/preview)
+- `PyInstaller` - Compilation en executable (optionnel)
+
+---
+
+## FAQ
+
+**Q: Le telechargement semble bloque a 100% ?**
+R: Regardez la barre de progression. Si elle indique "Conversion/Fusion...", c'est normal ! Le logiciel transforme le fichier brut en format fini.
+
+**Q: J'ai un message "FFmpeg introuvable" ?**
+R: C'est normal lors de la premiere utilisation. Le logiciel recupere les outils necessaires automatiquement.
 
 **Q: Où sont mes fichiers ?**
-R: Par défaut dans le dossier `Downloads_YT` à côté du logiciel.
+R: Par defaut dans le dossier `Downloads_YT` a cote du logiciel.
+
+**Q: Comment mettre a jour la version compilee (EXE) ?**
+R: Une popup s'affichera automatiquement quand une nouvelle version sera disponible sur GitHub. Cliquez sur "Telecharger" pour aller sur la page de la release.
+
+**Q: L'icone ne s'affiche pas dans l'EXE ?**
+R: Recompilez avec `compil.bat` → `[1]`. L'icone est generee par `scripts/generate_icon.py`.
