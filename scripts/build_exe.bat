@@ -8,11 +8,21 @@ echo   Compilation en EXE (Windows)
 echo ================================================================
 echo.
 
-REM Verification de PyInstaller
-python -c "import PyInstaller" >nul 2>&1
+REM Utiliser le Python du venv
+set "PY=.venv\Scripts\python.exe"
+set "PIP=.venv\Scripts\pip.exe"
+
+if not exist "%PY%" (
+    echo [ERREUR] Venv non trouve. Lancez run.bat une fois d'abord.
+    pause
+    exit /b 1
+)
+
+REM Verification de PyInstaller dans le venv
+"%PY%" -c "import PyInstaller" >nul 2>&1
 if ERRORLEVEL 1 (
-    echo [!] PyInstaller non installe. Installation en cours...
-    pip install pyinstaller
+    echo [!] PyInstaller non installe dans le venv. Installation...
+    "%PIP%" install pyinstaller
     if ERRORLEVEL 1 (
         echo [ERREUR] Impossible d'installer PyInstaller.
         pause
@@ -25,7 +35,7 @@ if exist "dist" rmdir /s /q "dist"
 if exist "build" rmdir /s /q "build"
 
 echo [2/3] Compilation en cours...
-python -m PyInstaller ^
+"%PY%" -m PyInstaller ^
     --noconfirm ^
     --onedir ^
     --windowed ^
@@ -33,26 +43,13 @@ python -m PyInstaller ^
     --icon "scripts\icon.ico" ^
     --add-data "src;src" ^
     --add-data "version.py;." ^
-    --hidden-import customtkinter ^
-    --hidden-import customtkinter.windows.widgets ^
-    --hidden-import customtkinter.windows.widgets.ctk_label ^
-    --hidden-import customtkinter.windows.widgets.ctk_button ^
-    --hidden-import customtkinter.windows.widgets.ctk_entry ^
-    --hidden-import customtkinter.windows.widgets.ctk_textbox ^
-    --hidden-import customtkinter.windows.widgets.ctk_progressbar ^
-    --hidden-import customtkinter.windows.widgets.ctk_optionmenu ^
-    --hidden-import customtkinter.windows.widgets.ctk_combobox ^
-    --hidden-import customtkinter.windows.widgets.ctk_segmentedbutton ^
-    --hidden-import customtkinter.windows.widgets.ctk_frame ^
-    --hidden-import customtkinter.windows.theme ^
-    --hidden-import customtkinter.color_theme ^
+    --collect-all customtkinter ^
     --hidden-import yt_dlp ^
     --hidden-import pytubefix ^
     --hidden-import PIL ^
     --hidden-import PIL.Image ^
     --hidden-import PIL.ImageTk ^
     --hidden-import PIL.ImageFilter ^
-    --collect-all customtkinter ^
     main.py
 
 if ERRORLEVEL 1 (
