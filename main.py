@@ -130,7 +130,7 @@ def install_git() -> bool:
 
 
 def update_application_dev() -> None:
-    """Mode dev : mise a jour via git pull."""
+    """Mode dev : git pull auto puis verification de version."""
     print("Verification des mises a jour (GitHub)...")
 
     git_exists = False
@@ -143,36 +143,26 @@ def update_application_dev() -> None:
         if install_git():
             git_exists = True
         else:
-            print("Git introuvable et impossible a installer. Mises a jour desactivees.")
+            print("Git introuvable. Mises a jour desactivees.")
             return
+
+    if not git_exists:
+        return
 
     try:
-        local_version = _get_local_version()
-        remote_version = get_remote_version()
-
-        if not remote_version:
-            print("Impossible de lire la version distante.")
-            return
-
-        print(f"   Local: {local_version}  |  Distant: {remote_version}")
-
-        if is_newer(remote_version, local_version):
-            print("Nouvelle version superieure detectee ! Telechargement...")
-            result = subprocess.run(
-                ["git", "pull", "--ff-only"],
-                capture_output=True, text=True,
-            )
-            if result.returncode != 0:
-                print(f"Echec de la mise a jour: {result.stderr.strip()}")
-                print("Veuillez mettre a jour manuellement: git pull")
+        print("Synchronisation avec GitHub...")
+        pull_result = subprocess.run(
+            ["git", "pull", "--ff-only"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if pull_result.returncode == 0:
+            output = pull_result.stdout.strip()
+            if "Already up to date" in output or "Deja a jour" in output:
+                print("Logiciel a jour.")
             else:
-                print("Mise a jour effectuee avec succes.")
-                print("Relancez le logiciel pour appliquer.")
-        elif remote_version == local_version:
-            print("Logiciel a jour.")
+                print("Mise a jour effectuee. Relancez le logiciel.")
         else:
-            print("Securite: Version distante inferieure. Mise a jour bloquee.")
-
+            print("Sync impossible. Verifiez votre connexion.")
     except Exception as e:
         print(f"Erreur update: {e}")
 
