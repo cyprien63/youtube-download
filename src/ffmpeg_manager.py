@@ -1,4 +1,5 @@
 import os
+import sys
 import platform
 import shutil
 import zipfile
@@ -11,8 +12,11 @@ from .utils import log
 FFMPEG_URL = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
 FFMPEG_URL_BACKUP = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
 
-_SCRIPT_DIR: str = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_ROOT: str = os.path.dirname(_SCRIPT_DIR)
+if getattr(sys, 'frozen', False):
+    _PROJECT_ROOT: str = os.path.dirname(sys.executable)
+else:
+    _SCRIPT_DIR: str = os.path.dirname(os.path.abspath(__file__))
+    _PROJECT_ROOT: str = os.path.dirname(_SCRIPT_DIR)
 BIN_DIR: str = os.path.join(_PROJECT_ROOT, "bin")
 
 DOWNLOAD_TIMEOUT = 120

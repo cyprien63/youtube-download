@@ -4,12 +4,36 @@ import os
 import threading
 import urllib.request
 import tempfile
+import json
 from typing import Optional
+
+GITHUB_REPO = "cyprien63/youtube-download"
+
+def _get_app_dir() -> str:
+    """Retourne le dossier ou se trouvent les donnees persistantes (a cote de l'exe)."""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _get_local_version() -> str:
+    """Lit la version locale."""
+    if getattr(sys, "frozen", False):
+        try:
+            from version import VERSION
+            return VERSION
+        except ImportError:
+            return "0.0.0"
+    try:
+        from version import VERSION
+        return VERSION
+    except ImportError:
+        return "0.0.0"
 
 
 def get_remote_version() -> Optional[str]:
-    """Recupere la version distante depuis GitHub."""
-    url = "https://raw.githubusercontent.com/cyprien63/youtube-download/main/version.py"
+    """Recupere la version distante depuis GitHub (raw)."""
+    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/version.py"
     try:
         with urllib.request.urlopen(url, timeout=5) as response:
             content = response.read().decode('utf-8')
@@ -18,19 +42,34 @@ def get_remote_version() -> Optional[str]:
                     return line.split('"')[1]
     except Exception as e:
         print(f"   Erreur lecture distante (urllib): {e}")
-        try:
-            subprocess.check_call(
-                ["git", "fetch"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-            content = subprocess.check_output(
-                ["git", "show", "origin/main:version.py"], stderr=subprocess.STDOUT
-            ).decode()
-            for line in content.splitlines():
-                if line.startswith("VERSION"):
-                    return line.split('"')[1]
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            return None
+        if not getattr(sys, "frozen", False):
+            try:
+                subprocess.check_call(
+                    ["git", "fetch"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                content = subprocess.check_output(
+                    ["git", "show", "origin/main:version.py"], stderr=subprocess.STDOUT
+                ).decode()
+                for line in content.splitlines():
+                    if line.startswith("VERSION"):
+                        return line.split('"')[1]
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                return None
     return None
+
+
+def get_github_release_info() -> Optional[dict]:
+    """Recupere les infos de la derniere release GitHub."""
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+    try:
+        req = urllib.request.Request(url, headers={
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "YouTube-Downloader",
+        })
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return json.loads(response.read().decode('utf-8'))
+    except Exception:
+        return None
 
 
 def is_newer(remote_ver: str, local_ver: str) -> bool:
@@ -50,7 +89,6 @@ def install_git() -> bool:
     """Installe Git via Winget ou telechargement direct."""
     print("Git non trouve. Tentative d'installation automatique...")
 
-    # 1. Winget
     print("   [1/2] Essai avec Winget...")
     try:
         subprocess.check_call(
@@ -63,7 +101,6 @@ def install_git() -> bool:
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         print(f"   Echec Winget: {e}")
 
-    # 2. Telechargement direct
     print("   [2/2] Essai par telechargement direct...")
     try:
         url = "https://github.com/git-for-windows/git/releases/download/v2.43.0.windows.1/Git-2.43.0-64-bit.exe"
@@ -90,11 +127,8 @@ def install_git() -> bool:
     return False
 
 
-def update_application() -> None:
-    """Verifie la version distante et met a jour si superieure."""
-    if getattr(sys, "frozen", False):
-        return
-
+def update_application_dev() -> None:
+    """Mode dev : mise a jour via git pull."""
     print("Verification des mises a jour (GitHub)...")
 
     git_exists = False
@@ -111,11 +145,7 @@ def update_application() -> None:
             return
 
     try:
-        try:
-            from version import VERSION as local_version
-        except ImportError:
-            local_version = "0.0.0"
-
+        local_version = _get_local_version()
         remote_version = get_remote_version()
 
         if not remote_version:
@@ -143,6 +173,82 @@ def update_application() -> None:
 
     except Exception as e:
         print(f"Erreur update: {e}")
+
+
+def check_frozen_update() -> None:
+    """Mode exe : verification via GitHub Releases + popup si nouvelle version."""
+    local_version = _get_local_version()
+    print(f"Verification des mises a jour... (v{local_version})")
+
+    release = get_github_release_info()
+    if not release:
+        print("Impossible de verifier les mises a jour.")
+        return
+
+    remote_version = release.get("tag_name", "").lstrip("v")
+    if not remote_version:
+        return
+
+    print(f"   Local: {local_version}  |  Distant: {remote_version}")
+
+    if not is_newer(remote_version, local_version):
+        print("Logiciel a jour.")
+        return
+
+    print("Nouvelle version disponible !")
+    html_url = release.get("html_url", "")
+    body = release.get("body", "")[:200]
+
+    try:
+        import customtkinter as ctk
+        _show_update_popup(ctk, remote_version, local_version, html_url, body)
+    except Exception as e:
+        print(f"Impossible d'afficher la popup: {e}")
+        print(f"Téléchargez manuellement: {html_url}")
+
+
+def _show_update_popup(ctk, remote_ver: str, local_ver: str, url: str, notes: str) -> None:
+    """Affiche une popup pour informer de la mise a jour disponible."""
+    popup = ctk.CTkToplevel()
+    popup.title("Mise a jour disponible")
+    popup.geometry("480x320")
+    popup.resizable(False, False)
+    popup.attributes("-topmost", True)
+    popup.grab_set()
+
+    ctk.CTkLabel(
+        popup, text="Mise a jour disponible !",
+        font=ctk.CTkFont(size=18, weight="bold"),
+    ).pack(pady=(20, 5))
+
+    ctk.CTkLabel(
+        popup,
+        text=f"Version {local_ver}  ->  {remote_ver}",
+        font=ctk.CTkFont(size=13),
+    ).pack(pady=(0, 10))
+
+    if notes:
+        ctk.CTkTextbox(popup, height=80, font=("Consolas", 11)).pack(padx=20, fill="x")
+        # On ne peut pas inserer depuis le constructeur, on le fait apres
+        textbox = popup.winfo_children()[-1]
+        textbox.configure(state="normal")
+        textbox.insert("1.0", notes)
+        textbox.configure(state="disabled")
+
+    def open_download():
+        import webbrowser
+        webbrowser.open(url)
+        popup.destroy()
+
+    ctk.CTkButton(
+        popup, text="Telecharger", command=open_download,
+        height=40, font=ctk.CTkFont(size=14, weight="bold"),
+    ).pack(pady=15)
+
+    ctk.CTkButton(
+        popup, text="Plus tard", command=popup.destroy,
+        height=30,
+    ).pack(pady=(0, 10))
 
 
 def install_requirements() -> None:
@@ -175,8 +281,10 @@ def _thread_excepthook(args) -> None:
 if __name__ == "__main__":
     threading.excepthook = _thread_excepthook
 
-    if not getattr(sys, "frozen", False):
-        update_application()
+    if getattr(sys, "frozen", False):
+        check_frozen_update()
+    else:
+        update_application_dev()
         install_requirements()
 
     try:

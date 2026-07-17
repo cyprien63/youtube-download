@@ -24,8 +24,11 @@ _YT_URL_RE = re.compile(
     r'.+'
 )
 
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
+if getattr(sys, 'frozen', False):
+    _PROJECT_ROOT = os.path.dirname(sys.executable)
+else:
+    _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    _PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
 _DEFAULT_DOWNLOAD_DIR = os.path.join(_PROJECT_ROOT, "Downloads_YT")
 _SETTINGS_FILE = os.path.join(_PROJECT_ROOT, ".settings")
 

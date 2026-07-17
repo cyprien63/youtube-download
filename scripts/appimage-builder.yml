@@ -1,0 +1,22 @@
+version: 1
+AppDir:
+  path: ./AppDir
+  app_info:
+    id: com.cyprien.youtube-downloader
+    name: YouTube Downloader
+    icon: youtube-downloader
+    version: !ENV ${VERSION}
+    exec: usr/bin/AppRun
+    exec_args: ""
+  files:
+    - ./AppDir/usr
+  linuxdeploy:
+    exclude:
+      - libgtk-3.so.0
+      - libgdk-3.so.0
+      - libgio-2.0.so.0
+      - libgobject-2.0.so.0
+AppImage:
+  update-information: None
+  sign: false
+  arch: x86_64
