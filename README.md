@@ -1,4 +1,4 @@
-# YouTube Downloader v5.3.3
+# YouTube Downloader v5.3.5
 
 Application de bureau professionnelle pour telecharger des videos et musiques YouTube avec une fiabilite maximale.
 
@@ -37,7 +37,7 @@ Le script automatiquement :
 | **Audio Complet** | MP3, M4A, WAV, OPUS, WMA avec controle du bitrate (64-320 kbps) |
 | **Metadonnees Integrees** | Image de couverture, titre, artiste, description integres dans les fichiers audio |
 | **Apercu Avant Telechargement** | Titre, miniature et chaine affiches avant de lancer le telechargement |
-| **Mise a Jour Auto** | `git pull` en mode Python / popup avec lien de telechargement en mode EXE |
+| **Mise a Jour Auto** | `git pull` automatique a chaque lancement (mode Python) |
 | **Multi-Format** | Vidéo : MP4, MKV. Audio : MP3, M4A, OPUS, WAV, WMA |
 | **FFmpeg Auto** | Telechargement et configuration automatiques au premier lancement |
 | **Thème Sombre/Clair** | Interface personnalisable |
@@ -128,7 +128,7 @@ youtube-download/
 | Mode | Comportement |
 |---|---|
 | **Python** (dev) | `git pull --ff-only` automatique a chaque lancement |
-| **EXE / AppImage** | Verification via GitHub Releases API + version.py en fallback. Popup tkinter avec lien de telechargement |
+| **EXE / AppImage** | Pas de mise a jour auto. Telechargez la nouvelle version manuellement depuis GitHub. |
 
 ### Protection Mode Compile
 
@@ -166,7 +166,7 @@ R: Par defaut dans le dossier `Downloads_YT` a cote du logiciel. Vous pouvez cha
 R: Relancez simplement `run.bat`. Il effectue un `git pull` automatique et relance avec la derniere version.
 
 **Q: Comment mettre a jour la version compilee (EXE) ?**
-R: Une popup s'affiche automatiquement quand une nouvelle version est disponible. Cliquez sur "Telecharger" pour aller sur la page GitHub Releases.
+R: Telechargez la derniere version depuis les releases GitHub et remplacez le dossier.
 
 **Q: L'application ne s'ouvre pas en mode compile ?**
 R: Verifiez le fichier `crash.log` a cote de l'executable. Il contient les erreurs memes quand la console est masquee.
@@ -174,5 +174,5 @@ R: Verifiez le fichier `crash.log` a cote de l'executable. Il contient les erreu
 **Q: Comment regenerer les icones ?**
 R: `scripts/generate_icon.py` genere `icon.ico` (Windows) et `icon.png` (Linux). Recompilez avec `compil.bat` apres.
 
-**Q: Le popup de mise a jour n'apparait pas ?**
-R: Verifiez qu'une GitHub Release existe pour la nouvelle version. Sans release, le popup ne s'affiche pas en mode compile.
+**Q: Comment mettre a jour la version compilee (EXE) ?**
+R: Telechargez la derniere version depuis les releases GitHub et remplacez le dossier.

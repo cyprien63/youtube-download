@@ -41,7 +41,6 @@ echo [2/3] Compilation en cours...
     --name "YouTube-Downloader" ^
     --icon "scripts\icon.ico" ^
     --add-data "src;src" ^
-    --add-data "version.py;." ^
     --collect-data customtkinter ^
     --collect-data customtkinter.windows ^
     --collect-data customtkinter.windows.widgets ^
