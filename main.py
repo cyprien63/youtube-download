@@ -274,26 +274,41 @@ def install_requirements() -> None:
 
 def _thread_excepthook(args) -> None:
     import traceback
-    print(f"[Thread error] {args.thread.name}: {args.exception}")
-    traceback.print_exception(args.exc_type, args.exc_value, args.exc_traceback)
+    msg = f"[Thread error] {args.thread.name}: {args.exception}\n"
+    msg += "".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback))
+    _log_to_file(msg)
+
+
+def _log_to_file(msg: str) -> None:
+    try:
+        log_path = os.path.join(_get_app_dir(), "crash.log")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
     threading.excepthook = _thread_excepthook
 
-    if getattr(sys, "frozen", False):
-        check_frozen_update()
-    else:
-        update_application_dev()
-        install_requirements()
+    try:
+        if getattr(sys, "frozen", False):
+            check_frozen_update()
+        else:
+            update_application_dev()
+            install_requirements()
+    except Exception as e:
+        _log_to_file(f"ERREUR UPDATE: {e}")
 
     try:
         from src.gui import YouTubeDownloaderApp
         app = YouTubeDownloaderApp()
         app.mainloop()
     except Exception as e:
-        print(f"ERREUR CRITIQUE: {e}")
         import traceback
+        tb = traceback.format_exc()
+        _log_to_file(f"ERREUR CRITIQUE: {e}\n{tb}")
+        print(f"ERREUR CRITIQUE: {e}")
         traceback.print_exc()
         if sys.stdin and sys.stdin.isatty():
             input("Appuyez sur Entree pour fermer...")
