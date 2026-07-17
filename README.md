@@ -1,23 +1,29 @@
-# YouTube Downloader
+# YouTube Downloader v5.3.3
 
-**YouTube Downloader** est une application de bureau professionnelle concue pour telecharger des videos et musiques YouTube avec une fiabilite maximale.
+Application de bureau professionnelle pour telecharger des videos et musiques YouTube avec une fiabilite maximale.
 
 ---
 
-## Demarrage Rapide (Utilisateurs Windows)
+## Demarrage Rapide
 
-Vous n'avez besoin d'aucune connaissance technique.
+### Mode Python ( developpement )
 
-1. Telechargez le dossier du projet.
-2. Double-cliquez sur le fichier **`run.bat`**
+1. Clonez le depot : `git clone https://github.com/cyprien63/youtube-download.git`
+2. Double-cliquez sur **`run.bat`**
 
-**C'est tout.** Le script va automatiquement :
+Le script automatiquement :
+- Detecte et installe Python 3.12+ si necessaire
+- Cree un environnement virtuel (.venv)
+- Installe toutes les dependances
+- Telecharge et configure FFmpeg
+- **Se met a jour tout seul** a chaque lancement (`git pull`)
 
-- Verifier si Python est installe (et l'installer sinon).
-- Creer un environnement isole (.venv).
-- Installer les bibliotheques necessaires.
-- Telecharger et configurer FFmpeg automatiquement.
-- Lancer l'interface.
+### Mode Compile ( utilisateurs finaux )
+
+1. Telechargez le dossier ou l'executable
+2. Lancez **`YouTube-Downloader.exe`** (Windows)
+
+> Pas besoin de Python installe. L'application est autonome.
 
 ---
 
@@ -25,16 +31,17 @@ Vous n'avez besoin d'aucune connaissance technique.
 
 | Fonctionnalite | Description |
 |---|---|
-| **Haute Vitesse** | Telechargement multi-segmente (10 fragments simultanes) |
+| **Telechargement Rapide** | Multi-segmente, 10 fragments simultanes, retries automatiques |
 | **Moteur Hybride** | `yt-dlp` (principal) + `pytubefix` (secours) avec 3 strategies de connexion |
-| **Qualite Maximale** | Support natif 4K/8K, fusion audio/vidéo automatique |
-| **Audio Avancé** | Conversion en MP3, M4A, WAV, OPUS, WMA avec controle du bitrate |
-| **Metadonnees Integrees** | Les fichiers audio contiennent automatiquement l'image de couverture, le titre, l'artiste et les metadonnees YouTube |
-| **Apercu Avant Telechargement** | Collez un lien et voyez le titre, la miniature et la chaine avant de telecharger. Cliquez sur l'image pour l'agrandir |
-| **Mise a Jour Auto** | En mode Python : mise a jour via `git pull`. En mode EXE : popup avec lien de telechargement |
+| **Qualite Maximale** | Support 4K/8K, fusion audio/vidéo automatique |
+| **Audio Complet** | MP3, M4A, WAV, OPUS, WMA avec controle du bitrate (64-320 kbps) |
+| **Metadonnees Integrees** | Image de couverture, titre, artiste, description integres dans les fichiers audio |
+| **Apercu Avant Telechargement** | Titre, miniature et chaine affiches avant de lancer le telechargement |
+| **Mise a Jour Auto** | `git pull` en mode Python / popup avec lien de telechargement en mode EXE |
 | **Multi-Format** | Vidéo : MP4, MKV. Audio : MP3, M4A, OPUS, WAV, WMA |
-| **Compilation** | Executable Windows (EXE) et AppImage Linux disponibles |
-| **FFmpeg Auto** | Telechargement et configuration automatiques de FFmpeg |
+| **FFmpeg Auto** | Telechargement et configuration automatiques au premier lancement |
+| **Thème Sombre/Clair** | Interface personnalisable |
+| **Compilation** | Executable Windows (EXE) et AppImage Linux |
 
 ---
 
@@ -42,82 +49,130 @@ Vous n'avez besoin d'aucune connaissance technique.
 
 Lancez **`compil.bat`** pour acceder au menu de compilation.
 
-| Option | Description |
-|---|---|
-| `[1] EXE Windows` | Compile un executable Windows (multi-fichiers, sans terminal, avec icone) via PyInstaller |
-| `[2] AppImage Linux` | Compile une AppImage Linux (a executer sur une machine Linux) |
+```
+============================================================
+       YouTube Downloader - Systeme de Compilation
+============================================================
 
-### Resultats
+  [1] Compiler en EXE (Windows, multi-fichiers, sans terminal)
+  [2] Compiler en AppImage (Linux)
+  [3] Quitter
+============================================================
+```
 
-- **EXE** : `dist/YouTube-Downloader/YouTube-Downloader.exe`
-- **AppImage** : `YouTube-Downloader-{version}-x86_64.AppImage`
+### EXE Windows
+
+- Utilise PyInstaller en mode `--onedir` (dossier multi-fichiers)
+- Sans terminal (`--windowed`)
+- Avec icone personalisee (cercle rouge / triangle blanc)
+- Necessite Python 3.12+ et le venv
+
+**Sortie** : `dist/YouTube-Downloader/YouTube-Downloader.exe`
+
+### AppImage Linux
+
+- A executer sur une machine Linux
+- Utilise PyInstaller + appimage-builder
+- Genere une AppImage portable
+
+**Sortie** : `YouTube-Downloader-{version}-x86_64.AppImage`
 
 ---
 
 ## Architecture Technique
 
-### Lanceur (`run.bat`)
-
-Script d'amorcage qui detecte Python (py launcher, python, chemins connus), cree le venv et lance l'application.
+```
+youtube-download/
+  main.py                Point d'entree, mise a jour, compilation
+  version.py             Version actuelle
+  run.bat                Lanceur Windows (auto-install Python + venv)
+  compil.bat             Menu de compilation
+  requirements.txt       Dependances Python
+  src/
+    gui.py               Interface graphique (customtkinter)
+    downloader.py        Moteur de telechargement (yt-dlp + pytubefix)
+    ffmpeg_manager.py    Gestion et telechargement de FFmpeg
+    utils.py             Logger thread-safe pour la GUI
+  scripts/
+    build_exe.bat        Script de compilation Windows
+    build_appimage.sh    Script de compilation Linux
+    appimage-builder.yml Recette AppImage
+    generate_icon.py     Generateur d'icone
+    icon.ico             Icone Windows
+    icon.png             Icone Linux
+  bin/                   Binaires FFmpeg (telecharges auto)
+```
 
 ### Moteur de Telechargement (`downloader.py`)
 
-- Utilise `yt-dlp` avec 3 strategies de connexion (android+web, ios, web) et retry automatique.
-- Fallback sur `pytubefix` si toutes les strategies echouent.
-- Post-processeurs : conversion de format, integration des metadonnees (FFmpegMetadata), integration de la couverture (EmbedThumbnail).
+- **Strategies de connexion** : 3 essais separes (android+web, ios, web) avec retry automatique et backoff
+- **Post-processeurs** : Conversion de format (FFmpegVideoConvertor), integration des metadonnees (FFmpegMetadata), integration de la couverture (EmbedThumbnail)
+- **Fallback** : Si yt-dlp echoue, bascule sur pytubefix automatiquement
 
 ### Gestionnaire FFmpeg (`ffmpeg_manager.py`)
 
-Telecharge automatiquement les binaires FFmpeg (ffmpeg.exe + ffprobe.exe) dans le dossier `bin/` au premier lancement.
+- Recherche FFmpeg dans le PATH systeme
+- Sinon telecharge un build statique Windows depuis GitHub dans `bin/`
+- Gere les deux URLs de fallback (yt-dlp/FFmpeg-Builds + gyan.dev)
 
 ### Interface (`gui.py`)
 
-Interface sombre et reactive basee sur `customtkinter` avec :
-
-- Apercu automatique du contenu (titre + miniature) au collage du lien.
-- Barre de progression et logs en temps reel.
-- Selection de format et qualite.
-- Changement de theme (sombre/claire).
+- Basee sur customtkinter (theme sombre par defaut)
+- **Apercu** : Collez un lien YouTube, le titre + miniature + chaine s'affichent automatiquement (debounce 600ms)
+- **Preview** : Cliquez sur la miniature pour l'agrandir dans une fenetre separee
+- Barre de progression avec pourcentage, vitesse et ETA
+- Logs en temps reel avec timestamps
 
 ### Systeme de Mise a Jour (`main.py`)
 
 | Mode | Comportement |
 |---|---|
-| **Python** (dev) | Verification de version via GitHub + `git pull` automatique |
-| **EXE / AppImage** | Verification via GitHub Releases API + popup avec lien de telechargement |
+| **Python** (dev) | `git pull --ff-only` automatique a chaque lancement |
+| **EXE / AppImage** | Verification via GitHub Releases API + version.py en fallback. Popup tkinter avec lien de telechargement |
 
-### Compilation (`scripts/`)
+### Protection Mode Compile
 
-- `build_exe.bat` : Script de compilation Windows via PyInstaller (onedir, windowed).
-- `build_appimage.sh` : Script de compilation Linux via PyInstaller + appimage-builder.
-- `generate_icon.py` : Generateur d'icone (cercle rouge avec triangle blanc).
-- `appimage-builder.yml` : Recette AppImage.
+Le code detecte `sys.frozen` (PyInstaller) pour :
+- Desactiver l'installation de dependances (elles sont dans l'exe)
+- Utiliser le bon chemin pour les donnees (`os.path.dirname(sys.executable)`)
+- Logger les erreurs dans `crash.log` (car la console est masquee)
 
 ---
 
 ## Dependances
 
-- `customtkinter` - Interface graphique moderne
-- `yt-dlp` - Moteur de telechargement principal
-- `pytubefix` - Moteur de telechargement de secours
-- `pillow` - Gestion des images (miniature/preview)
-- `PyInstaller` - Compilation en executable (optionnel)
+| Package | Role |
+|---|---|
+| `customtkinter` | Interface graphique moderne |
+| `yt-dlp` | Moteur de telechargement principal |
+| `pytubefix` | Moteur de telechargement de secours |
+| `pillow` | Gestion des images (miniature, apercu) |
+| `PyInstaller` | Compilation en executable (optionnel) |
 
 ---
 
 ## FAQ
 
 **Q: Le telechargement semble bloque a 100% ?**
-R: Regardez la barre de progression. Si elle indique "Conversion/Fusion...", c'est normal ! Le logiciel transforme le fichier brut en format fini.
+R: La barre indique "Conversion/Fusion..." ? C'est normal. Le logiciel transforme le fichier brut en format fini. Cela peut prendre 10 a 60 secondes.
 
 **Q: J'ai un message "FFmpeg introuvable" ?**
-R: C'est normal lors de la premiere utilisation. Le logiciel recupere les outils necessaires automatiquement.
+R: Normal a la premiere utilisation. FFmpeg est telecharge automatiquement (~80 Mo). Cela ne se reproduira plus.
 
-**Q: Où sont mes fichiers ?**
-R: Par defaut dans le dossier `Downloads_YT` a cote du logiciel.
+**Q: Ou sont mes fichiers ?**
+R: Par defaut dans le dossier `Downloads_YT` a cote du logiciel. Vous pouvez changer le chemin dans l'interface.
+
+**Q: Comment mettre a jour la version Python ?**
+R: Relancez simplement `run.bat`. Il effectue un `git pull` automatique et relance avec la derniere version.
 
 **Q: Comment mettre a jour la version compilee (EXE) ?**
-R: Une popup s'affichera automatiquement quand une nouvelle version sera disponible sur GitHub. Cliquez sur "Telecharger" pour aller sur la page de la release.
+R: Une popup s'affiche automatiquement quand une nouvelle version est disponible. Cliquez sur "Telecharger" pour aller sur la page GitHub Releases.
 
-**Q: L'icone ne s'affiche pas dans l'EXE ?**
-R: Recompilez avec `compil.bat` → `[1]`. L'icone est generee par `scripts/generate_icon.py`.
+**Q: L'application ne s'ouvre pas en mode compile ?**
+R: Verifiez le fichier `crash.log` a cote de l'executable. Il contient les erreurs memes quand la console est masquee.
+
+**Q: Comment regenerer les icones ?**
+R: `scripts/generate_icon.py` genere `icon.ico` (Windows) et `icon.png` (Linux). Recompilez avec `compil.bat` apres.
+
+**Q: Le popup de mise a jour n'apparait pas ?**
+R: Verifiez qu'une GitHub Release existe pour la nouvelle version. Sans release, le popup ne s'affiche pas en mode compile.
