@@ -51,6 +51,7 @@ mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
 mkdir -p AppDir/usr/share/applications
 
 cp -r dist/youtube-downloader/* AppDir/usr/bin/
+cp scripts/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/youtube-downloader.png
 
 cat > AppDir/usr/bin/AppRun << 'APPRUN'
 #!/bin/bash

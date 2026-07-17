@@ -30,7 +30,7 @@ python -m PyInstaller ^
     --onedir ^
     --windowed ^
     --name "YouTube-Downloader" ^
-    --icon "NONE" ^
+    --icon "scripts\icon.ico" ^
     --add-data "src;src" ^
     --add-data "version.py;." ^
     --hidden-import customtkinter ^
