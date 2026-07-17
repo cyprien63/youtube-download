@@ -80,7 +80,7 @@ class _YtDlpLogger:
                 label = self._build_label(pct, speed, eta)
                 self._progress_callback(pct / 100, label)
             log(clean)
-        elif any(tag in clean for tag in ['[ExtractAudio]', '[Merger]', '[Fixup]', '[VideoConvertor]']):
+        elif any(tag in clean for tag in ['[ExtractAudio]', '[Merger]', '[Fixup]', '[VideoConvertor]', '[Metadata]', '[EmbedThumbnail]']):
             self._progress_callback(1.0, "Conversion/Fusion...")
             log(clean)
         else:
@@ -342,6 +342,7 @@ class DownloadManager:
 
     def _configure_audio(self, opts: dict, fmt: str, q_val: int, has_ffmpeg: bool) -> None:
         opts['format'] = 'bestaudio/best'
+        opts['writethumbnail'] = True
 
         if not has_ffmpeg:
             log(f"FFmpeg manquant: impossible de convertir en {fmt}. Telechargement du meilleur audio.")
@@ -355,22 +356,24 @@ class DownloadManager:
             'wma': ('wmav2', f'-b:a {q_val}k' if q_val > 0 else '192k'),
         }
 
+        metadata_pps = [
+            {'key': 'FFmpegMetadata'},
+            {'key': 'EmbedThumbnail'},
+        ]
+
         if fmt in audio_codecs:
             codec, extra = audio_codecs[fmt]
             log(f"Conversion audio vers {fmt.upper()} ({codec})...")
-            opts['postprocessors'] = [{
-                'key': 'FFmpegVideoConvertor',
-                'preferedformat': fmt,
-            }]
+            opts['postprocessors'] = [
+                {'key': 'FFmpegVideoConvertor', 'preferedformat': fmt},
+            ] + metadata_pps
             opts['postprocessor_args'] = {
                 'FFmpegVideoConvertor': ['-acodec', codec] + extra.split(),
             }
         else:
-            opts['postprocessors'] = [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': fmt,
-                'preferredquality': str(q_val) if q_val > 0 else '192',
-            }]
+            opts['postprocessors'] = [
+                {'key': 'FFmpegExtractAudio', 'preferredcodec': fmt, 'preferredquality': str(q_val) if q_val > 0 else '192'},
+            ] + metadata_pps
             log(f"Conversion audio vers {fmt.upper()} via FFmpegExtractAudio...")
 
     def _configure_video(self, opts: dict, fmt: str, q_val: int, has_ffmpeg: bool) -> None:
