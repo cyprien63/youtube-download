@@ -3,11 +3,14 @@ import re
 import os
 import sys
 import threading
+import urllib.request
+import io
 from tkinter import filedialog
 from typing import Optional
 
 import customtkinter as ctk
 import tkinter as tk
+from PIL import Image
 
 from .utils import logger, log
 from .downloader import DownloadManager
@@ -68,8 +71,13 @@ class YouTubeDownloaderApp(ctk.CTk):
         self.manager = DownloadManager()
         self._downloading = False
         self._dark_mode = (saved_mode == "dark")
+        self._preview_job: Optional[str] = None
+        self._preview_thumb_image: Optional[ctk.CTkImage] = None
+        self._preview_full_image: Optional[Image.Image] = None
 
         self.setup_ui()
+
+        self.url_var.trace_add("write", self._on_url_changed)
 
         logger.set_widget(self.log_textbox)
         log("GUI initialise.")
@@ -122,10 +130,31 @@ class YouTubeDownloaderApp(ctk.CTk):
         self.url_entry = ctk.CTkEntry(
             self.main, textvariable=self.url_var, placeholder_text="Collez le lien ici..."
         )
-        self.url_entry.grid(row=1, column=0, sticky="ew", pady=(0, 20))
+        self.url_entry.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+
+        self.preview_frame = ctk.CTkFrame(self.main, corner_radius=10)
+        self.preview_frame.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        self.preview_frame.grid_columnconfigure(1, weight=1)
+        self.preview_frame.grid_remove()
+
+        self.preview_thumb_label = ctk.CTkLabel(self.preview_frame, text="")
+        self.preview_thumb_label.grid(row=0, column=0, rowspan=2, padx=10, pady=10)
+        self.preview_thumb_label.bind("<Button-1>", lambda e: self._enlarge_thumbnail())
+
+        self.preview_title_label = ctk.CTkLabel(
+            self.preview_frame, text="", font=ctk.CTkFont(size=14, weight="bold"),
+            wraplength=500, anchor="w", justify="left",
+        )
+        self.preview_title_label.grid(row=0, column=1, sticky="w", padx=(0, 10), pady=(10, 0))
+
+        self.preview_channel_label = ctk.CTkLabel(
+            self.preview_frame, text="", font=ctk.CTkFont(size=12),
+            text_color="gray", anchor="w",
+        )
+        self.preview_channel_label.grid(row=1, column=1, sticky="w", padx=(0, 10), pady=(0, 10))
 
         path_frame = ctk.CTkFrame(self.main, fg_color="transparent")
-        path_frame.grid(row=2, column=0, sticky="ew", pady=(0, 20))
+        path_frame.grid(row=3, column=0, sticky="ew", pady=(0, 20))
         path_frame.grid_columnconfigure(0, weight=1)
         ctk.CTkEntry(
             path_frame, textvariable=self.download_path, state="readonly"
@@ -141,21 +170,21 @@ class YouTubeDownloaderApp(ctk.CTk):
             height=50,
             font=ctk.CTkFont(size=16, weight="bold"),
         )
-        self.btn.grid(row=3, column=0, sticky="ew", pady=10)
+        self.btn.grid(row=4, column=0, sticky="ew", pady=10)
 
         self.progress = ctk.CTkProgressBar(self.main)
-        self.progress.grid(row=4, column=0, sticky="ew", pady=10)
+        self.progress.grid(row=5, column=0, sticky="ew", pady=10)
         self.progress.set(0)
 
         self.pct_label = ctk.CTkLabel(self.main, text="0%")
-        self.pct_label.grid(row=5, column=0, sticky="e")
+        self.pct_label.grid(row=6, column=0, sticky="e")
 
-        ctk.CTkLabel(self.main, text="Logs:").grid(row=6, column=0, sticky="w")
+        ctk.CTkLabel(self.main, text="Logs:").grid(row=7, column=0, sticky="w")
         self.log_textbox = ctk.CTkTextbox(self.main, height=200, font=("Consolas", 12))
-        self.log_textbox.grid(row=7, column=0, sticky="nsew")
+        self.log_textbox.grid(row=8, column=0, sticky="nsew")
         self.log_textbox.configure(state="disabled")
 
-        self.main.grid_rowconfigure(7, weight=1)
+        self.main.grid_rowconfigure(8, weight=1)
 
         self.bind("<Return>", lambda e: self.start_thread())
         self.bind("<Control-v>", lambda e: self._paste_url())
@@ -167,6 +196,88 @@ class YouTubeDownloaderApp(ctk.CTk):
                 self.url_var.set(text.strip())
         except tk.TclError:
             pass
+
+    def _on_url_changed(self, *_args) -> None:
+        if self._preview_job is not None:
+            self.after_cancel(self._preview_job)
+        url = self.url_var.get().strip()
+        if not url or not self._is_valid_youtube_url(url):
+            self._clear_preview()
+            return
+        self._preview_job = self.after(600, self._start_preview_fetch, url)
+
+    def _start_preview_fetch(self, url: str) -> None:
+        self._preview_job = None
+        self.preview_frame.grid()
+        self.preview_title_label.configure(text="Chargement...")
+        self.preview_channel_label.configure(text="")
+        self.preview_thumb_label.configure(text="")
+        self._preview_full_image = None
+        threading.Thread(target=self._fetch_preview, args=(url,), daemon=True).start()
+
+    def _fetch_preview(self, url: str) -> None:
+        try:
+            import yt_dlp
+            opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'skip_download': True,
+                'noplaylist': True,
+            }
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+            if not info:
+                self.after(0, self._clear_preview)
+                return
+            title = info.get("title", "")
+            channel = info.get("channel", info.get("uploader", ""))
+            thumb_url = info.get("thumbnail", "")
+            full_image = None
+            if thumb_url:
+                try:
+                    req = urllib.request.Request(
+                        thumb_url,
+                        headers={"User-Agent": "Mozilla/5.0"},
+                    )
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        data = resp.read()
+                    full_image = Image.open(io.BytesIO(data))
+                except Exception:
+                    full_image = None
+            self.after(0, self._show_preview, title, channel, full_image)
+        except Exception as e:
+            log(f"Apercu: {e}")
+            self.after(0, self._clear_preview)
+
+    def _show_preview(self, title: str, channel: str, image: Optional[Image.Image]) -> None:
+        self.preview_title_label.configure(text=title)
+        self.preview_channel_label.configure(text=channel)
+        self._preview_full_image = image
+        if image:
+            thumb = image.copy()
+            thumb.thumbnail((120, 90), Image.LANCZOS)
+            self._preview_thumb_image = ctk.CTkImage(light_image=thumb, dark_image=thumb, size=(120, 90))
+            self.preview_thumb_label.configure(image=self._preview_thumb_image, text="", cursor="hand2")
+        else:
+            self.preview_thumb_label.configure(text="Pas d'image", cursor="")
+
+    def _clear_preview(self) -> None:
+        self.preview_frame.grid_remove()
+        self._preview_full_image = None
+
+    def _enlarge_thumbnail(self) -> None:
+        if not self._preview_full_image:
+            return
+        win = ctk.CTkToplevel(self)
+        win.title("Apercu")
+        win.transient(self)
+        win.grab_set()
+        img = self._preview_full_image.copy()
+        max_w, max_h = 960, 720
+        img.thumbnail((max_w, max_h), Image.LANCZOS)
+        ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=(img.width, img.height))
+        lbl = ctk.CTkLabel(win, image=ctk_img, text="")
+        lbl.pack(padx=10, pady=10)
 
     def toggle_theme(self) -> None:
         self._dark_mode = not self._dark_mode
