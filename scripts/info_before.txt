@@ -1,0 +1,21 @@
+YouTube Downloader - Informations
+==================================
+
+Ce programme vous permet de telecharger des videos et musiques YouTube
+en haute qualite (jusqu'a 8K) avec les fonctionnalites suivantes :
+
+  - Telechargement video : MP4, MKV (4K/8K supporte)
+  - Telechargement audio : MP3, M4A, OPUS, WAV, WMA
+  - Metadonnees integrees : image de couverture, titre, artiste
+  - Apercu avant telechargement
+  - Moteur hybride : yt-dlp + pytubefix
+  - FFmpeg auto-configure
+
+Prerequis :
+  - Windows 10 ou superieur
+  - ~200 Mo d'espace disque
+
+Apres l'installation, lancez YouTube-Downloader.exe depuis le bureau
+ou le menu Demarrer.
+
+Source : https://github.com/cyprien63/youtube-download

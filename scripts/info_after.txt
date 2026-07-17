@@ -1,0 +1,20 @@
+YouTube Downloader - Installation terminee !
+============================================
+
+L'installation s'est terminee avec succes.
+
+Pour commencer :
+  1. Double-cliquez sur YouTube-Downloader.exe
+  2. Collez un lien YouTube dans la barre de texte
+  3. Choisissez votre format et cliquez Telecharger
+
+Notes :
+  - Les fichiers sont sauvegardes dans le dossier Downloads_YT
+  - La premiere execution telecharge automatiquement FFmpeg (~80 Mo)
+  - Vous pouvez changer le dossier de destination dans l'interface
+
+Problemes ?
+  - Consultez le fichier crash.log a cote de l'executable
+  - Visitez https://github.com/cyprien63/youtube-download/issues
+
+Merci d'utiliser YouTube Downloader !
