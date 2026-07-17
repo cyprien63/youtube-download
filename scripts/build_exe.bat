@@ -52,7 +52,7 @@ python -m PyInstaller ^
     --hidden-import PIL.Image ^
     --hidden-import PIL.ImageTk ^
     --hidden-import PIL.ImageFilter ^
-    --collect-data customtkinter ^
+    --collect-all customtkinter ^
     main.py
 
 if ERRORLEVEL 1 (

@@ -267,7 +267,7 @@ def install_requirements() -> None:
             print("Installation terminee.")
         except Exception as e:
             print(f"Echec de l'installation: {e}")
-            if sys.stdin.isatty():
+            if sys.stdin and sys.stdin.isatty():
                 input("Appuyez sur Entree pour quitter...")
             sys.exit(1)
 
@@ -295,5 +295,5 @@ if __name__ == "__main__":
         print(f"ERREUR CRITIQUE: {e}")
         import traceback
         traceback.print_exc()
-        if sys.stdin.isatty():
+        if sys.stdin and sys.stdin.isatty():
             input("Appuyez sur Entree pour fermer...")
