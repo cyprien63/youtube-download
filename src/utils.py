@@ -25,7 +25,8 @@ class Logger:
         if not message:
             return
 
-        sys.__stdout__.write(message)
+        if sys.__stdout__:
+            sys.__stdout__.write(message)
 
         with self._lock:
             if not self.text_widget:
@@ -50,7 +51,8 @@ class Logger:
                 self.text_widget.see("end")
                 self.text_widget.configure(state="disabled")
             except Exception as e:
-                sys.__stderr__.write(f"[Logger] Erreur GUI: {e}\n")
+                if sys.__stderr__:
+                    sys.__stderr__.write(f"[Logger] Erreur GUI: {e}\n")
 
         if threading.current_thread() is threading.main_thread():
             append()
@@ -58,7 +60,8 @@ class Logger:
             try:
                 self.text_widget.after(0, append)
             except Exception as e:
-                sys.__stderr__.write(f"[Logger] Erreur after(): {e}\n")
+                if sys.__stderr__:
+                    sys.__stderr__.write(f"[Logger] Erreur after(): {e}\n")
 
     def flush(self) -> None:
         sys.__stdout__.flush()
