@@ -178,17 +178,26 @@ def update_application_dev() -> None:
 
 
 def check_frozen_update(app=None) -> None:
-    """Mode exe : verification via GitHub Releases + popup si nouvelle version."""
+    """Mode exe : verification via GitHub Releases OU version.py + popup si nouvelle version."""
     local_version = _get_local_version()
     print(f"Verification des mises a jour... (v{local_version})")
 
-    release = get_github_release_info()
-    if not release:
-        print("Impossible de verifier les mises a jour.")
-        return
+    remote_version = None
+    html_url = ""
+    body = ""
 
-    remote_version = release.get("tag_name", "").lstrip("v")
+    release = get_github_release_info()
+    if release:
+        remote_version = release.get("tag_name", "").lstrip("v")
+        html_url = release.get("html_url", "")
+        body = release.get("body", "")[:200]
+
     if not remote_version:
+        remote_version = get_remote_version()
+        html_url = f"https://github.com/{GITHUB_REPO}/releases"
+
+    if not remote_version:
+        print("Impossible de verifier les mises a jour.")
         return
 
     print(f"   Local: {local_version}  |  Distant: {remote_version}")
@@ -198,8 +207,6 @@ def check_frozen_update(app=None) -> None:
         return
 
     print("Nouvelle version disponible !")
-    html_url = release.get("html_url", "")
-    body = release.get("body", "")[:200]
 
     try:
         import customtkinter as ctk
