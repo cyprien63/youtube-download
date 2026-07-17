@@ -150,6 +150,14 @@ def update_application_dev() -> None:
         return
 
     try:
+        local_version = _get_local_version()
+        remote_version = get_remote_version()
+
+        if remote_version:
+            print(f"   Local: {local_version}  |  Distant: {remote_version}")
+        else:
+            print(f"   Local: {local_version}  |  Distant: indisponible")
+
         print("Synchronisation avec GitHub...")
         pull_result = subprocess.run(
             ["git", "pull", "--ff-only"],
@@ -160,7 +168,9 @@ def update_application_dev() -> None:
             if "Already up to date" in output or "Deja a jour" in output:
                 print("Logiciel a jour.")
             else:
-                print("Mise a jour effectuee. Relancez le logiciel.")
+                new_version = _get_local_version()
+                print(f"Mise a jour effectuee : {local_version} -> {new_version}")
+                print("Relancez le logiciel pour appliquer.")
         else:
             print("Sync impossible. Verifiez votre connexion.")
     except Exception as e:
