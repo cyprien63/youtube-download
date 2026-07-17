@@ -33,7 +33,9 @@ def _get_local_version() -> str:
 
 def get_remote_version() -> Optional[str]:
     """Recupere la version distante depuis GitHub (raw)."""
-    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/version.py"
+    import time
+    cache_bust = int(time.time())
+    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/version.py?t={cache_bust}"
     try:
         with urllib.request.urlopen(url, timeout=5) as response:
             content = response.read().decode('utf-8')
